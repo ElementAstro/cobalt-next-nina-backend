@@ -1,101 +1,301 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useCallback, useRef, useEffect } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  useSensor,
+  useSensors,
+  PointerSensor,
+} from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { motion, AnimatePresence } from "framer-motion";
+import CameraViewfinder from "@/components/dashboard/camera-view";
+import ExposureControls from "@/components/dashboard/right-sidebar";
+import Sidebar, { SidebarItem } from "@/components/dashboard/left-sidebar";
+import TopBar from "@/components/dashboard/top-bar";
+import { CameraPage } from "@/components/dashboard/camera";
+import { FocuserPage } from "@/components/dashboard/focuser";
+import { FilterWheelPage } from "@/components/dashboard/filterwheel";
+import { TelescopePage } from "@/components/dashboard/telescope";
+import SplashScreen from "@/components/splash-screen";
+import ErrorBoundary from "@/components/error/error-boundary";
+import { toast } from "sonner";
+import { useMediaQuery } from "react-responsive";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+  SheetClose,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+
+export default function Dashboard() {
+  const [devices, setDevices] = useState<SidebarItem[]>([
+    {
+      id: "device",
+      name: "Device Connection",
+      icon: "wifi",
+      active: false,
+      route: "/device",
+    },
+    {
+      id: "debug",
+      name: "Debug",
+      icon: "terminal",
+      active: false,
+      route: "/debug",
+    },
+    {
+      id: "config",
+      name: "Configuration",
+      icon: "settings",
+      active: false,
+      route: "/config",
+    },
+  ]);
+
+  const [exposureSettings, setExposureSettings] = useState({
+    shutterSpeed: "1/125",
+    iso: "100",
+    aperture: "f/2.8",
+    focusPoint: "5000",
+    filterType: "Clear",
+    exposureTime: 10,
+    exposureMode: "Auto",
+    whiteBalance: "Daylight",
+    gain: 0,
+    offset: 0,
+    binning: "1x1",
+  });
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedParameter, setSelectedParameter] = useState<string | null>(
+    null
+  );
+  const [isShooting, setIsShooting] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [activeDevice, setActiveDevice] = useState<string | null>(null);
+  const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isPortrait, setIsPortrait] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetDevice, setSheetDevice] = useState<string | null>(null);
+  const [capturedImages, setCapturedImages] = useState<string[]>([]);
+  const [isServerConnected, setIsServerConnected] = useState(false);
+  const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  const toggleDevice = useCallback((id: string) => {
+    setDevices((devices) =>
+      devices.map((device) =>
+        device.id === id
+          ? { ...device, active: !device.active }
+          : { ...device, active: false }
+      )
+    );
+    setActiveDevice((prev) => (prev === id ? null : id));
+  }, []);
+
+  const handleDragStart = useCallback(() => {
+    // 添加拖拽开始逻辑
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setActiveId(null);
+  }, []);
+
+  const handleParameterClick = useCallback((parameter: string) => {
+    setSelectedParameter((prevParam) =>
+      prevParam === parameter ? null : parameter
+    );
+  }, []);
+
+  const handleParameterChange = useCallback(
+    (parameter: string, value: string) => {
+      setExposureSettings((prev) => ({ ...prev, [parameter]: value }));
+    },
+    []
+  );
+
+  const handleCapture = useCallback(
+    (
+      exposureTime: number,
+      burstMode: boolean,
+      exposureMode: string,
+      whiteBalance: string
+    ) => {
+      if (isShooting) {
+        // 切换暂停/恢复
+        setIsPaused((prev) => !prev);
+      } else {
+        // 开始新的捕捉
+        setIsShooting(true);
+        setIsPaused(false);
+        setProgress(0);
+        const captureCount = burstMode ? 3 : 1; // 假设连拍模式下捕捉3张
+        const totalTime = exposureTime * captureCount;
+
+        toast({
+          title: "正在捕捉图像",
+          description: `${
+            burstMode ? "连拍" : "单张"
+          }捕捉中，预计耗时 ${totalTime} 秒...`,
+          variant: "default",
+        });
+
+        const startTime = Date.now();
+        const updateProgress = () => {
+          const elapsedTime = Date.now() - startTime;
+          const newProgress = (elapsedTime / (totalTime * 1000)) * 100;
+          setProgress(Math.min(newProgress, 100));
+
+          if (newProgress < 100) {
+            captureIntervalRef.current = setTimeout(updateProgress, 100);
+          } else {
+            setIsShooting(false);
+            setProgress(0);
+
+            toast({
+              title: "捕捉完成",
+              description: `${burstMode ? "连拍" : "单张"}图像已成功捕捉！`,
+              variant: "default",
+            });
+
+            // 模拟添加捕捉的图像
+            setCapturedImages((prev) => [
+              ...prev,
+              ...Array(captureCount).fill(
+                `/placeholder.svg?height=300&width=300`
+              ),
+            ]);
+          }
+        };
+
+        updateProgress();
+      }
+    },
+    [isShooting]
+  );
+
+  const handlePause = useCallback(() => {
+    setIsPaused((prev) => !prev);
+  }, []);
+
+  const handleOpenSheet = useCallback((device: string) => {
+    setSheetDevice(device);
+    setSheetOpen(true);
+  }, []);
+
+  const handleCloseSheet = useCallback(() => {
+    setSheetOpen(false);
+    setSheetDevice(null);
+  }, []);
+
+  const renderSheetContent = () => {
+    switch (sheetDevice) {
+      case "telescope":
+        return <TelescopePage />;
+      case "focuser":
+        return <FocuserPage />;
+      case "filterWheel":
+        return <FilterWheelPage />;
+      case "camera":
+        return <CameraPage />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+    <>
+      <ErrorBoundary>
+        <SplashScreen />
+        <DndContext
+          sensors={sensors}
+          modifiers={[restrictToWindowEdges]}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
+            <TopBar onOpenOffcanvas={handleOpenSheet} />
+            <div className="flex flex-1 overflow-hidden">
+              <Sidebar devices={devices} onToggle={toggleDevice} />
+              <div className="flex-1 relative overflow-hidden">
+                {!activeDevice && <CameraViewfinder isShooting={isShooting} />}
+                <AnimatePresence>
+                  {activeDevice && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.3 }}
+                    ></motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <motion.div
+                className="w-20 border-l border-gray-700"
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5 }}
+              >
+                <ExposureControls
+                  settings={exposureSettings}
+                  onParameterClick={handleParameterClick}
+                  onCapture={handleCapture}
+                  onPause={handlePause}
+                  isShooting={isShooting}
+                  isPaused={isPaused}
+                  progress={progress}
+                  onLoadPreset={() => {}}
+                  onSavePreset={() => {}}
+                />
+              </motion.div>
+            </div>
+          </div>
+          <Sheet open={sheetOpen} onOpenChange={handleCloseSheet}>
+            <SheetContent
+              side={isMobile ? "bottom" : "right"}
+              className={`p-4 ${isMobile ? "w-full h-full" : "w-[480px]"}`}
+            >
+              <SheetHeader>
+                <SheetTitle>设备设置</SheetTitle>
+                <SheetDescription>
+                  在这里你可以调整设备的各项参数。
+                </SheetDescription>
+              </SheetHeader>
+              {sheetDevice && renderSheetContent()}
+              <SheetClose asChild>
+                <Button variant="ghost">关闭</Button>
+              </SheetClose>
+            </SheetContent>
+          </Sheet>
+        </DndContext>
+      </ErrorBoundary>
+    </>
   );
 }
