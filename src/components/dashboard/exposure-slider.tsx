@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useCallback, useMemo } from "react";
+import { debounce } from "lodash";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ interface HistoryItem {
   timestamp: Date;
 }
 
+const MAX_HISTORY = 50; // 限制历史记录数量
 const PRESET_VALUES = [0.001, 0.01, 0.1, 1, 10, 30, 60, 300, 600, 1800, 3600];
 
 export function ExposureTimeSlider() {
@@ -31,37 +33,65 @@ export function ExposureTimeSlider() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastExposureRef = useRef(exposure);
 
-  const addToHistory = (newExposure: number) => {
-    const newHistoryItem = {
-      exposure: newExposure,
-      timestamp: new Date(),
-    };
-    const newHistory = [...history.slice(0, historyIndex + 1), newHistoryItem];
-    setHistory(newHistory);
-    setHistoryIndex(newHistory.length - 1);
-  };
+  // 使用 useMemo 缓存预设值
+  const presetValues = useMemo(() => PRESET_VALUES, []);
 
-  const handleUndo = () => {
+  // 防抖处理历史记录添加
+  const debouncedAddToHistory = useCallback(
+    debounce((newExposure: number) => {
+      if (newExposure === lastExposureRef.current) return;
+
+      const newHistoryItem = {
+        exposure: newExposure,
+        timestamp: new Date(),
+      };
+
+      setHistory((prev) => {
+        const newHistory = [
+          ...prev.slice(0, historyIndex + 1),
+          newHistoryItem,
+        ].slice(-MAX_HISTORY);
+        return newHistory;
+      });
+
+      setHistoryIndex((prev) => Math.min(prev + 1, MAX_HISTORY - 1));
+      lastExposureRef.current = newExposure;
+    }, 300),
+    [historyIndex]
+  );
+
+  const handleExposureChange = useCallback(
+    (value: number) => {
+      setExposure(value);
+      debouncedAddToHistory(value);
+    },
+    [setExposure, debouncedAddToHistory]
+  );
+
+  const handleUndo = useCallback(() => {
     if (historyIndex > 0) {
       const prevState = history[historyIndex - 1];
       setExposure(prevState.exposure);
-      setHistoryIndex(historyIndex - 1);
+      setHistoryIndex((prev) => prev - 1);
     }
-  };
+  }, [history, historyIndex, setExposure]);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     if (historyIndex < history.length - 1) {
       const nextState = history[historyIndex + 1];
       setExposure(nextState.exposure);
-      setHistoryIndex(historyIndex + 1);
+      setHistoryIndex((prev) => prev + 1);
     }
-  };
+  }, [history, historyIndex, setExposure]);
 
-  const handleExposureChange = (value: number) => {
-    setExposure(value);
-    addToHistory(value);
-  };
+  const handlePresetClick = useCallback(
+    (value: number) => {
+      handleExposureChange(value);
+    },
+    [handleExposureChange]
+  );
 
   return (
     <TooltipProvider>
@@ -145,7 +175,7 @@ export function ExposureTimeSlider() {
                         </motion.div>
                       </PopoverTrigger>
                       <PopoverContent className="w-56 grid grid-cols-4 gap-1 p-2 bg-gray-800 border-gray-700">
-                        {PRESET_VALUES.map((value) => (
+                        {presetValues.map((value) => (
                           <Tooltip key={value}>
                             <TooltipTrigger asChild>
                               <motion.div
@@ -153,7 +183,7 @@ export function ExposureTimeSlider() {
                                 whileTap={{ scale: 0.95 }}
                               >
                                 <Button
-                                  onClick={() => handleExposureChange(value)}
+                                  onClick={() => handlePresetClick(value)}
                                   variant="outline"
                                   size="sm"
                                   className="text-xs w-full bg-gray-700 text-gray-200 hover:bg-gray-600 border-gray-600"

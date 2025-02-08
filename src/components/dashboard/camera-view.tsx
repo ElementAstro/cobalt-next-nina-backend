@@ -11,7 +11,6 @@ import {
   Camera,
   Grid3X3,
   Loader2,
-  X,
   Image as ImageIcon,
   Settings,
 } from "lucide-react";
@@ -27,18 +26,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useViewerStore } from "@/store/useDashboardStore";
-import domtoimage from "dom-to-image";
+import { useViewerStore } from "@/stores/dashboardStore";
 import { LightBox } from "./lightbox";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
+import html2canvas from "html2canvas";
 
-interface CameraViewfinderProps {
-  isShooting: boolean;
-}
-
-export default function CameraViewfinder({
-  isShooting,
-}: CameraViewfinderProps) {
+export default function CameraViewfinder() {
   const {
     zoom,
     brightness,
@@ -89,9 +82,8 @@ export default function CameraViewfinder({
   );
 
   const handleStartCapture = async () => {
+    setIsCapturing(true);
     try {
-      setIsCapturing(true);
-
       if (!viewfinderRef.current) {
         toast({
           variant: "destructive",
@@ -101,6 +93,7 @@ export default function CameraViewfinder({
         return;
       }
 
+      // 创建离屏 canvas
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       if (!ctx) {
@@ -112,51 +105,90 @@ export default function CameraViewfinder({
         return;
       }
 
-      canvas.width = viewfinderRef.current.clientWidth;
-      canvas.height = viewfinderRef.current.clientHeight;
+      // 设置 canvas 尺寸
+      const width = viewfinderRef.current.clientWidth;
+      const height = viewfinderRef.current.clientHeight;
+      canvas.width = width;
+      canvas.height = height;
 
-      try {
-        const imgSrc = await domtoimage.toPng(viewfinderRef.current, {
-          quality: 0.95,
-          bgcolor: "#000000",
-          style: {
-            transform: `scale(${zoom}) rotate(${rotation}deg)`,
-            filter: `
-              brightness(${brightness}%)
-              contrast(${contrast}%)
-              saturate(${saturation}%)
-            `,
-          },
-        });
+      // 应用变换和滤镜效果
+      ctx.save();
 
-        const img = new window.Image();
-        img.src = imgSrc;
+      // 设置背景色
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, width, height);
 
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = () => {
-            reject(new Error("图片加载失败"));
-          };
-        });
+      // 应用缩放和旋转
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(zoom, zoom);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.translate(-width / 2, -height / 2);
 
-        ctx.drawImage(img, 0, 0);
+      // 绘制主图像
+      const image = new Image();
+      image.onload = async () => {
+        ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
+        ctx.drawImage(image, 0, 0, width, height);
 
+        // 导出图像
+        const dataUrl = canvas.toDataURL("image/png", 0.95);
         const link = document.createElement("a");
         link.download = `capture_${Date.now()}.png`;
-        link.href = canvas.toDataURL("image/png", 0.9);
+        link.href = dataUrl;
         link.click();
 
         toast({
           title: "成功",
           description: "图片已保存",
         });
-      } catch (error) {
-        toast({
-          variant: "destructive",
-          title: "错误",
-          description: error instanceof Error ? error.message : "图片生成失败",
-        });
+      };
+
+      const canvasElement = await html2canvas(viewfinderRef.current);
+      if (viewfinderRef.current) {
+        image.src = canvasElement.toDataURL();
       }
+
+      // 如果显示网格，绘制网格
+      if (showGrid) {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.lineWidth = 1;
+
+        // 垂直线
+        for (let i = 1; i < 3; i++) {
+          const x = (width * i) / 3;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+
+        // 水平线
+        for (let i = 1; i < 3; i++) {
+          const y = (height * i) / 3;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+      }
+
+      // 绘制对焦点
+      const focusX = (focusPoint.x / 100) * width;
+      const focusY = (focusPoint.y / 100) * height;
+
+      ctx.strokeStyle = "#ff0000";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(focusX, focusY, 8, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "错误",
+        description: error instanceof Error ? error.message : "图片生成失败",
+      });
     } finally {
       setIsCapturing(false);
     }
@@ -174,7 +206,6 @@ export default function CameraViewfinder({
   };
 
   const [showSettings, setShowSettings] = useState(false);
-  const { toast } = useToast();
 
   useEffect(() => {
     if (showSettings) {

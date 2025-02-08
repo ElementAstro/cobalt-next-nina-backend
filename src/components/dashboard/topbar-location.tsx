@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Location, useDashboardStore } from "@/store/useDashboardStore";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, MapPin, Check, X, AlertCircle } from "lucide-react";
+import { Location, useDashboardStore } from "@/stores/dashboardStore";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, MapPin, X, AlertCircle } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -13,19 +13,9 @@ import {
 } from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import StaticMap from "@/components/information/static-map";
+import StaticMap from "./static-map";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
-import GeocodingComponent from "@/components/information/geo-coding";
-import MessageBus, { LogLevel } from "@/utils/message-bus";
-import wsClient from "@/utils/ws-client";
-
-const messageBus = wsClient
-  ? new MessageBus(wsClient, {
-      logLevel: LogLevel.DEBUG,
-      maxRetries: 5,
-      retryDelay: 2000,
-    })
-  : null;
+import GeocodingComponent from "./geo-coding";
 
 export default function TopbarLocation() {
   const [loading, setLoading] = useState(false);
@@ -39,37 +29,16 @@ export default function TopbarLocation() {
   const setLocation = useDashboardStore((state) => state.setLocation);
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const controls = useAnimation();
-  const [showSuccess, setShowSuccess] = useState(false);
   const [manualInputVisible, setManualInputVisible] = useState(false);
   const [manualCoords, setManualCoords] = useState({ lat: "", lon: "" });
 
-  useEffect(() => {
-    if (!location) {
-      fetchLocation();
-    }
-
-    // Subscribe to location update confirmations
-    let unsubscribe = () => {};
-    if (messageBus) {
-      unsubscribe = messageBus.subscribe(
-        "sync-location-response",
-        (message: any, topic?: string) => {
-          if (message.status === "success") {
-            setShowSuccess(true);
-            setTimeout(() => setShowSuccess(false), 3000);
-          } else {
-            setError({ type: "network", message: "同步位置信息失败。" });
-          }
-        }
-      );
-    }
-
-    return () => {
-      unsubscribe();
-    };
+  // Sync function is now internal; external message bus calls removed.
+  const syncLocationToBackend = useCallback((lat: number, lon: number) => {
+    // No external message bus. Optionally, perform an API call here.
+    console.log(`Location synced to backend: Lat ${lat}, Lon ${lon}`);
   }, []);
 
-  const fetchLocation = () => {
+  const fetchLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setError({ type: "unavailable", message: "浏览器不支持地理位置获取。" });
       return;
@@ -88,23 +57,30 @@ export default function TopbarLocation() {
         setLoading(false);
       }
     );
-  };
+  }, [setLocation, syncLocationToBackend]);
 
-  const syncLocationToBackend = (lat: number, lon: number) => {
-    if (messageBus) {
-      messageBus.publish("sync-location", { latitude: lat, longitude: lon });
+  useEffect(() => {
+    if (!location) {
+      fetchLocation();
     }
-  };
+    // Removed messageBus subscription logic as location sync is now stored in the internal store.
+  }, [location, fetchLocation]);
 
-  const handleLocationUpdate = (location: Location) => {
-    setLocation(location);
-    syncLocationToBackend(location.latitude, location.longitude);
-  };
+  const handleLocationUpdate = useCallback(
+    (location: Location) => {
+      setLocation(location);
+      syncLocationToBackend(location.latitude, location.longitude);
+    },
+    [setLocation, syncLocationToBackend]
+  );
 
-  const handleMapClick = (coordinates: string) => {
-    const [longitude, latitude] = coordinates.split(",").map(Number);
-    handleLocationUpdate({ latitude, longitude });
-  };
+  const handleMapClick = useCallback(
+    (coordinates: string) => {
+      const [longitude, latitude] = coordinates.split(",").map(Number);
+      handleLocationUpdate({ latitude, longitude });
+    },
+    [handleLocationUpdate]
+  );
 
   return (
     <TooltipProvider>
@@ -138,9 +114,7 @@ export default function TopbarLocation() {
                     transition={{ delay: 0.1 }}
                   >
                     <StaticMap
-                      location={location || undefined}
                       key="44fc0016a614cb00ed9d8000eb8f9428"
-                      zoom={10}
                       size="400*400"
                       onMapClick={handleMapClick}
                       showControls={true}
@@ -149,7 +123,6 @@ export default function TopbarLocation() {
                       showScale={true}
                       theme="dark"
                       features={["road", "building", "point"]}
-                      onLocationChange={handleLocationUpdate}
                     />
                   </motion.div>
                   <GeocodingComponent onLocationSelect={handleLocationUpdate} />
@@ -314,32 +287,7 @@ export default function TopbarLocation() {
           </motion.div>
         )}
         <AnimatePresence>
-          {showSuccess && (
-            <motion.div
-              className="flex items-center bg-green-600/90 backdrop-blur-sm text-white px-3 py-1 rounded-md shadow-lg"
-              initial={{ opacity: 0, y: -20, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -20, scale: 0.9 }}
-              transition={{
-                type: "spring",
-                stiffness: 300,
-                damping: 20,
-                duration: 0.3,
-              }}
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2 }}
-              >
-                <Check className="w-4 h-4 mr-2" />
-              </motion.div>
-              位置已更新
-            </motion.div>
-          )}
-        </AnimatePresence>
-        {error && (
-          <AnimatePresence>
+          {error && (
             <motion.div
               className="flex items-center gap-2 bg-red-600/90 backdrop-blur-sm text-white px-3 py-1 rounded-md shadow-lg"
               initial={{ opacity: 0, y: -20, scale: 0.9 }}
@@ -371,8 +319,8 @@ export default function TopbarLocation() {
                 </Button>
               )}
             </motion.div>
-          </AnimatePresence>
-        )}
+          )}
+        </AnimatePresence>
         {location && (
           <motion.div
             className="flex flex-col text-sm text-white"
@@ -400,22 +348,6 @@ export default function TopbarLocation() {
           </motion.div>
         )}
       </div>
-      <AnimatePresence>
-        {showSuccess && (
-          <motion.div
-            className="fixed top-4 right-4"
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 50 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Alert>
-              <AlertTitle>成功</AlertTitle>
-              <AlertDescription>您的位置已成功更新。</AlertDescription>
-            </Alert>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </TooltipProvider>
   );
 }

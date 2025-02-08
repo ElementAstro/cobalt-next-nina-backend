@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import {
   HoverCard,
@@ -109,63 +109,87 @@ const ExposureControls: React.FC<ExposureControlsProps> = React.memo(
     progress,
     histogramData,
   }) => {
-    // 使用相机store和滤镜轮store
     const camera = useCameraStore();
     const filterWheel = useFilterWheelStore();
 
-    // 将连拍模式及滤镜类型数据存储在组件内部状态
+    // 本地状态
     const [burstMode, setBurstMode] = useState(false);
     const [burstCount, setBurstCount] = useState(1);
     const [filterType, setFilterType] = useState("None");
 
-    const handleExposureChange = (value: number) => {
-      camera.setExposure(value);
-    };
+    // 使用 useCallback 包装所有处理函数
+    const handleExposureChange = useCallback(
+      (value: number) => {
+        camera.setExposure(value);
+      },
+      [camera]
+    );
 
-    const handleGainChange = (value: number) => {
-      camera.setGain(value);
-    };
+    const handleGainChange = useCallback(
+      (value: number) => {
+        camera.setGain(value);
+      },
+      [camera]
+    );
 
-    const handleOffsetChange = (value: number) => {
-      camera.setOffset(value);
-    };
+    const handleOffsetChange = useCallback(
+      (value: number) => {
+        camera.setOffset(value);
+      },
+      [camera]
+    );
 
-    const handleBinningChange = (value: string) => {
-      camera.setBinning(value);
-    };
+    const handleBinningChange = useCallback(
+      (value: string) => {
+        camera.setBinning(value);
+      },
+      [camera]
+    );
 
-    const handleFilterChange = (value: string) => {
-      setFilterType(value);
-      // 映射滤镜类型到对应的 filterId
-      const mapping: Record<string, number> = {
-        None: 0,
-        "Black and White": 1,
-        Sepia: 2,
-        Vivid: 3,
-      };
-      filterWheel.changeFilter(mapping[value] || 0);
-    };
+    const handleFilterChange = useCallback(
+      (value: string) => {
+        setFilterType(value);
+        const mapping: Record<string, number> = {
+          None: 0,
+          "Black and White": 1,
+          Sepia: 2,
+          Vivid: 3,
+        };
+        filterWheel.changeFilter(mapping[value] || 0);
+      },
+      [filterWheel]
+    );
 
-    const handleReset = () => {
-      // 重置本地状态
+    // 重置函数优化
+    const handleReset = useCallback(() => {
       setBurstMode(false);
       setBurstCount(1);
       setFilterType("None");
-      // 重置相机参数（可扩展）
-      camera.setExposure(camera.exposureMin);
-      camera.setGain(camera.defaultGain);
-      camera.setOffset(camera.defaultOffset);
-      // 如有其他重置逻辑，可在此添加
-    };
 
-    const handleCaptureClick = () => {
+      // 使用 requestAnimationFrame 避免同步更新
+      requestAnimationFrame(() => {
+        camera.setExposure(camera.exposureMin);
+        camera.setGain(camera.defaultGain);
+        camera.setOffset(camera.defaultOffset);
+        camera.setBinning("1x1");
+        filterWheel.changeFilter(0);
+      });
+    }, [camera, filterWheel]);
+
+    const handleCaptureClick = useCallback(() => {
       onCapture(
         camera.exposure,
         burstMode,
         settings.exposureMode,
         settings.whiteBalance
       );
-    };
+    }, [
+      camera.exposure,
+      burstMode,
+      onCapture,
+      settings.exposureMode,
+      settings.whiteBalance,
+    ]);
 
     return (
       <motion.div

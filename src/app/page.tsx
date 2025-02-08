@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   DndContext,
-  DragOverlay,
   useSensor,
   useSensors,
   PointerSensor,
@@ -20,7 +19,7 @@ import { FilterWheelPage } from "@/components/dashboard/filterwheel";
 import { TelescopePage } from "@/components/dashboard/telescope";
 import SplashScreen from "@/components/splash-screen";
 import ErrorBoundary from "@/components/error/error-boundary";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import { useMediaQuery } from "react-responsive";
 import {
   Sheet,
@@ -28,10 +27,10 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { useExposureStore, useViewerStore } from "@/stores/dashboardStore";
 
 export default function Dashboard() {
   const [devices, setDevices] = useState<SidebarItem[]>([
@@ -58,56 +57,36 @@ export default function Dashboard() {
     },
   ]);
 
-  const [exposureSettings, setExposureSettings] = useState({
-    shutterSpeed: "1/125",
-    iso: "100",
-    aperture: "f/2.8",
-    focusPoint: "5000",
-    filterType: "Clear",
-    exposureTime: 10,
-    exposureMode: "Auto",
-    whiteBalance: "Daylight",
-    gain: 0,
-    offset: 0,
-    binning: "1x1",
-  });
+  const exposureSettings = useExposureStore((state) => ({
+    shutterSpeed: "1/125", // 如有需要，可调整默认值
+    iso: String(state.iso),
+    aperture: String(state.aperture),
+    focusPoint: String(state.focusPoint),
+    filterType: state.filterType,
+    exposureTime: state.exposureTime,
+    exposureMode: state.exposureMode,
+    whiteBalance: state.whiteBalance,
+    gain: state.gain,
+    offset: state.offset,
+    binning: state.binning,
+  }));
 
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [selectedParameter, setSelectedParameter] = useState<string | null>(
-    null
-  );
   const [isShooting, setIsShooting] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeDevice, setActiveDevice] = useState<string | null>(null);
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [isPortrait, setIsPortrait] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetDevice, setSheetDevice] = useState<string | null>(null);
-  const [capturedImages, setCapturedImages] = useState<string[]>([]);
-  const [isServerConnected, setIsServerConnected] = useState(false);
+  const capturedImages = useViewerStore((state) => state.images);
+  const setCapturedImages = useViewerStore((state) => state.setImages);
   const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
+      activationConstraint: { distance: 8 },
     })
   );
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
 
   const toggleDevice = useCallback((id: string) => {
     setDevices((devices) =>
@@ -121,25 +100,16 @@ export default function Dashboard() {
   }, []);
 
   const handleDragStart = useCallback(() => {
-    // 添加拖拽开始逻辑
+    // Logic for drag start can be added here.
   }, []);
 
   const handleDragEnd = useCallback(() => {
-    setActiveId(null);
+    // Currently no activeId is used.
   }, []);
 
   const handleParameterClick = useCallback((parameter: string) => {
-    setSelectedParameter((prevParam) =>
-      prevParam === parameter ? null : parameter
-    );
+    console.log("Parameter clicked:", parameter);
   }, []);
-
-  const handleParameterChange = useCallback(
-    (parameter: string, value: string) => {
-      setExposureSettings((prev) => ({ ...prev, [parameter]: value }));
-    },
-    []
-  );
 
   const handleCapture = useCallback(
     (
@@ -149,14 +119,14 @@ export default function Dashboard() {
       whiteBalance: string
     ) => {
       if (isShooting) {
-        // 切换暂停/恢复
+        // Toggle pause/resume.
         setIsPaused((prev) => !prev);
       } else {
-        // 开始新的捕捉
+        // Start new capture.
         setIsShooting(true);
         setIsPaused(false);
         setProgress(0);
-        const captureCount = burstMode ? 3 : 1; // 假设连拍模式下捕捉3张
+        const captureCount = burstMode ? 3 : 1;
         const totalTime = exposureTime * captureCount;
 
         toast({
@@ -181,24 +151,27 @@ export default function Dashboard() {
 
             toast({
               title: "捕捉完成",
-              description: `${burstMode ? "连拍" : "单张"}图像已成功捕捉！`,
+              description: `${
+                burstMode ? "连拍" : "单张"
+              }图像已成功捕捉！曝光模式：${exposureMode}，白平衡：${whiteBalance}`,
               variant: "default",
             });
 
-            // 模拟添加捕捉的图像
-            setCapturedImages((prev) => [
-              ...prev,
+            // Simulate adding captured images.
+            const newImages = [
+              ...capturedImages,
               ...Array(captureCount).fill(
                 `/placeholder.svg?height=300&width=300`
               ),
-            ]);
+            ];
+            setCapturedImages(newImages);
           }
         };
 
         updateProgress();
       }
     },
-    [isShooting]
+    [capturedImages, isShooting, setCapturedImages]
   );
 
   const handlePause = useCallback(() => {
@@ -214,6 +187,57 @@ export default function Dashboard() {
     setSheetOpen(false);
     setSheetDevice(null);
   }, []);
+
+  const handleLoadPreset = useCallback(() => {
+    const preset = localStorage.getItem("exposurePreset");
+    if (preset) {
+      try {
+        const presetData = JSON.parse(preset);
+        const exposureStore = useExposureStore.getState();
+
+        // Load each setting from preset
+        exposureStore.resetSettings({
+          shutterSpeed: presetData.shutterSpeed || "1/125",
+          exposureTime: presetData.exposureTime || 60,
+          exposureMode: presetData.exposureMode || "Manual",
+          iso: presetData.iso || "100",
+          aperture: presetData.aperture || "2.8",
+          focusPoint: presetData.focusPoint || "50",
+          filterType: presetData.filterType || "None",
+          gain: presetData.gain || 0,
+          offset: presetData.offset || 0,
+          binning: presetData.binning || "1x1",
+        });
+
+        toast({
+          title: "预设加载成功",
+          description: "曝光预设已应用到相机设置",
+          variant: "default",
+        });
+      } catch {
+        toast({
+          title: "加载预设失败",
+          description: "预设数据格式无效",
+          variant: "destructive",
+        });
+      }
+    } else {
+      toast({
+        title: "预设不存在",
+        description: "没有找到已保存的曝光预设",
+        variant: "default",
+      });
+    }
+  }, []);
+
+  const handleSavePreset = useCallback(() => {
+    localStorage.setItem("exposurePreset", JSON.stringify(exposureSettings));
+    toast({
+      title: "预设保存成功",
+      description: "当前曝光设置已保存为预设",
+      variant: "default",
+    });
+  }, [exposureSettings]);
 
   const renderSheetContent = () => {
     switch (sheetDevice) {
@@ -245,7 +269,7 @@ export default function Dashboard() {
             <div className="flex flex-1 overflow-hidden">
               <Sidebar devices={devices} onToggle={toggleDevice} />
               <div className="flex-1 relative overflow-hidden">
-                {!activeDevice && <CameraViewfinder isShooting={isShooting} />}
+                {!activeDevice && <CameraViewfinder />}
                 <AnimatePresence>
                   {activeDevice && (
                     <motion.div
@@ -271,11 +295,23 @@ export default function Dashboard() {
                   isShooting={isShooting}
                   isPaused={isPaused}
                   progress={progress}
-                  onLoadPreset={() => {}}
-                  onSavePreset={() => {}}
+                  onLoadPreset={handleLoadPreset}
+                  onSavePreset={handleSavePreset}
                 />
               </motion.div>
             </div>
+            {capturedImages.length > 0 && (
+              <div className="p-4 flex space-x-4 overflow-auto bg-gray-800">
+                {capturedImages.map((img, idx) => (
+                  <img
+                    key={idx}
+                    src={img}
+                    alt={`Captured ${idx}`}
+                    className="w-24 h-24 object-cover rounded"
+                  />
+                ))}
+              </div>
+            )}
           </div>
           <Sheet open={sheetOpen} onOpenChange={handleCloseSheet}>
             <SheetContent

@@ -10,21 +10,34 @@ import { useMediaQuery } from "react-responsive";
 import {
   Telescope,
   Focus,
-  Compass,
-  Filter,
   Camera,
-  Logs,
+  Filter,
   Battery,
-  Wifi,
-  Settings,
   WifiOff,
   WifiZero,
-  Info,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import WindowsTaskbarClock from "./topbar-time";
 import TopbarLocation from "./topbar-location";
-import { useIsMobile } from "@/hooks/use-mobile";
+
+interface BatteryManager {
+  level: number;
+  charging: boolean;
+  addEventListener(
+    type: "levelchange" | "chargingchange",
+    listener: (e: Event) => void
+  ): void;
+  removeEventListener(
+    type: "levelchange" | "chargingchange",
+    listener: (e: Event) => void
+  ): void;
+}
+
+declare global {
+  interface Navigator {
+    getBattery?: () => Promise<BatteryManager>;
+  }
+}
 
 interface TopBarProps {
   onOpenOffcanvas: (device: string) => void;
@@ -46,11 +59,10 @@ const itemVariants = {
 };
 
 export default function TopBar({ onOpenOffcanvas }: TopBarProps) {
-  const [isShowDeviceName, setIsShowDeviceName] = useState(!useIsMobile);
-  const [time, setTime] = useState(new Date());
+  const isMobile = useMediaQuery({ maxWidth: 768 });
+  const [isShowDeviceName, setIsShowDeviceName] = useState(!isMobile);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [wifiStatus, setWifiStatus] = useState<boolean | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
   const devices = [
     {
@@ -80,21 +92,13 @@ export default function TopBar({ onOpenOffcanvas }: TopBarProps) {
   ];
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTime(new Date());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     const handleResize = () => {
-      setIsShowDeviceName(!useIsMobile);
+      setIsShowDeviceName(!isMobile);
     };
 
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [useIsMobile]);
+  }, [isMobile]);
 
   const updateOnlineStatus = () => {
     setWifiStatus(navigator.onLine);
@@ -104,18 +108,19 @@ export default function TopBar({ onOpenOffcanvas }: TopBarProps) {
     const fetchStatus = async () => {
       try {
         // Get battery status
-        if ((navigator as any).getBattery) {
-          const battery = await (navigator as any).getBattery();
-          setBatteryLevel(Math.round(battery.level * 100));
-          battery.addEventListener("levelchange", () => {
+        if (navigator.getBattery) {
+          navigator.getBattery().then((battery: BatteryManager) => {
             setBatteryLevel(Math.round(battery.level * 100));
-          });
-
-          // Add battery charging status listener
-          battery.addEventListener("chargingchange", () => {
-            if (battery.charging) {
+            battery.addEventListener("levelchange", () => {
               setBatteryLevel(Math.round(battery.level * 100));
-            }
+            });
+
+            // Add battery charging status listener
+            battery.addEventListener("chargingchange", () => {
+              if (battery.charging) {
+                setBatteryLevel(Math.round(battery.level * 100));
+              }
+            });
           });
         }
 
@@ -123,8 +128,6 @@ export default function TopBar({ onOpenOffcanvas }: TopBarProps) {
         updateOnlineStatus();
       } catch (error) {
         console.error("Error fetching status:", error);
-      } finally {
-        setIsLoading(false);
       }
     };
 
@@ -138,8 +141,8 @@ export default function TopBar({ onOpenOffcanvas }: TopBarProps) {
     return () => {
       window.removeEventListener("online", updateOnlineStatus);
       window.removeEventListener("offline", updateOnlineStatus);
-      if ((navigator as any).getBattery) {
-        (navigator as any).getBattery().then((battery: any) => {
+      if (navigator.getBattery) {
+        navigator.getBattery().then((battery: BatteryManager) => {
           battery.removeEventListener("levelchange", () => {});
           battery.removeEventListener("chargingchange", () => {});
         });
