@@ -8,7 +8,7 @@ import LogTabs from "@/components/log/log-tabs";
 
 const LogPanel: React.FC = () => {
   return (
-    <Card className="h-screen flex flex-col">
+    <Card className="dark h-screen flex flex-col">
       {" "}
       {/* 使用 h-screen 确保占据整个屏幕高度 */}
       <CardHeader className="px-3 py-2 border-b flex-none">

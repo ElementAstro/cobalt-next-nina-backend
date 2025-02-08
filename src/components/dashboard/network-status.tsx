@@ -68,30 +68,45 @@ export function NetworkStatus() {
 
   useEffect(() => {
     const updateStatus = () => {
-      if (!networkStatus.status.online) {
-        setStatus("offline");
-      } else if (
-        networkStatus.status.effectiveType === "slow-2g" ||
-        networkStatus.status.effectiveType === "2g"
-      ) {
-        setStatus("slow");
-      } else {
-        setStatus("online");
-      }
+      const newStatus = !networkStatus.status.online
+        ? "offline"
+        : networkStatus.status.effectiveType === "slow-2g" ||
+          networkStatus.status.effectiveType === "2g"
+        ? "slow"
+        : "online";
+
+      // 只在状态确实发生变化时才更新
+      setStatus((prevStatus) => {
+        if (prevStatus !== newStatus) {
+          return newStatus;
+        }
+        return prevStatus;
+      });
     };
 
+    // 立即执行一次更新
     updateStatus();
+
+    // 设置定时器
     const interval = setInterval(updateStatus, 5000);
+
+    // 清理函数
     return () => clearInterval(interval);
-  }, [networkStatus]);
+  }, [networkStatus.status.online, networkStatus.status.effectiveType]); // 添加具体的依赖项
 
   const refreshNetworkStatus = async (retryCount = 0) => {
+    if (isRefreshing) return; // 防止重复刷新
+
     try {
+      setIsRefreshing(true);
       const response = await fetch("/api/network-status");
-      if (!response.ok)
+
+      if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
       const data = await response.json();
+
       setCurrentSpeed(data.speed);
       setSpeedHistory((prev) => [
         ...prev.slice(-29),
@@ -114,21 +129,14 @@ export function NetworkStatus() {
           retryCount: retryCount + 1,
         });
       }
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    setError(null);
-    try {
-      await refreshNetworkStatus();
-    } catch {
-      setError({
-        message: "Failed to refresh network status",
-        retryCount: 0,
-      });
-    } finally {
-      setIsRefreshing(false);
+  const handleRefresh = () => {
+    if (!isRefreshing) {
+      refreshNetworkStatus();
     }
   };
 

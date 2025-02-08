@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useLogStore } from "@/stores/logStore";
@@ -176,64 +177,65 @@ const LogFilters: React.FC = () => {
           )}
           高级筛选
         </Button>
+        <TooltipProvider>
+          <AnimatePresence>
+            {isAdvancedOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-4 overflow-hidden"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>日志数量限制</Label>
+                    <Slider
+                      value={[logCount]}
+                      onValueChange={([value]) => setLogCount(value)}
+                      max={1000}
+                      step={100}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      显示最近 {logCount} 条日志
+                    </div>
+                  </div>
 
-        <AnimatePresence>
-          {isAdvancedOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-4 overflow-hidden"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>日志数量限制</Label>
-                  <Slider
-                    value={[logCount]}
-                    onValueChange={([value]) => setLogCount(value)}
-                    max={1000}
-                    step={100}
-                  />
-                  <div className="text-xs text-muted-foreground">
-                    显示最近 {logCount} 条日志
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>分页显示</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Switch
+                            checked={isPaginationEnabled}
+                            onCheckedChange={setIsPaginationEnabled}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          启用分页显示可以提升大量日志的性能
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label>实时更新</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Switch
+                            checked={isRealTimeEnabled}
+                            onCheckedChange={setIsRealTimeEnabled}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          实时更新会持续获取最新的日志
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>分页显示</Label>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Switch
-                          checked={isPaginationEnabled}
-                          onCheckedChange={setIsPaginationEnabled}
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        启用分页显示可以提升大量日志的性能
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label>实时更新</Label>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Switch
-                          checked={isRealTimeEnabled}
-                          onCheckedChange={setIsRealTimeEnabled}
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        实时更新会持续获取最新的日志
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </TooltipProvider>
       </div>
     </motion.div>
   );
