@@ -441,7 +441,7 @@ const NoVNCClient: React.FC = () => {
         <div className="bg-red-500 text-white p-2 text-center">{error}</div>
       )}
 
-      <header className="h-12 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex-none">
+      <header className="h-12 border-b border-border/40  flex-none bg-black">
         <div className="flex h-full items-center justify-between px-4">
           <div className="flex items-center space-x-4">
             <Button
@@ -449,7 +449,7 @@ const NoVNCClient: React.FC = () => {
               size="icon"
               onClick={() => setShowSidebar(!showSidebar)}
             >
-              <LayoutGrid className="h-4 w-4" />
+              <LayoutGrid className="h-4 w-4 text-white" />
             </Button>
             {isConnected && (
               <span className="text-sm text-muted-foreground">
@@ -465,15 +465,15 @@ const NoVNCClient: React.FC = () => {
               className="hidden sm:flex"
             >
               {isFullscreen ? (
-                <Minimize2 className="h-4 w-4" />
+                <Minimize2 className="h-4 w-4 text-white" />
               ) : (
-                <Maximize2 className="h-4 w-4" />
+                <Maximize2 className="h-4 w-4 text-white" />
               )}
             </Button>
             <Sheet open={showSidebar} onOpenChange={setShowSidebar}>
               <SheetTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <Settings className="h-4 w-4" />
+                  <Settings className="h-4 w-4 text-white" />
                 </Button>
               </SheetTrigger>
               <SheetContent
