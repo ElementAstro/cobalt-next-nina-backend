@@ -85,7 +85,8 @@ const ImageFraming: React.FC = () => {
   }, [viewState.fovData, setViewState, calculateFovPoints]);
 
   return (
-    <div className="relative h-screen max-h-screen max-w-screen overflow-hidden">
+    <div className="relative w-screen h-screen overflow-hidden bg-black">
+      {/* 主地图容器 */}
       <div className="absolute inset-0">
         <AladinLiteView
           ra={viewState.targetRa}
@@ -97,19 +98,19 @@ const ImageFraming: React.FC = () => {
         />
       </div>
 
-      {/* 右侧工具栏 - 使用固定宽度 */}
+      {/* 右侧工具栏 - 使用固定宽度和响应式隐藏 */}
       <motion.div
         initial="expanded"
         animate={viewState.rightPanelCollapsed ? "collapsed" : "expanded"}
         variants={{
           expanded: { opacity: 1, x: 0 },
-          collapsed: { opacity: 0, x: 100 },
+          collapsed: { opacity: 0, x: "100%" },
         }}
         className="fixed right-0 top-0 bottom-0 z-40 flex h-full"
       >
-        <Card className="w-48 bg-black/50 backdrop-blur-md border-l border-white/10">
-          <CardContent className="p-4 h-full">
-            <ScrollArea className="h-full">
+        <Card className="w-64 md:w-72 bg-black/50 backdrop-blur-md border-l border-white/10">
+          <CardContent className="p-4 h-full flex flex-col">
+            <ScrollArea className="flex-1">
               <div className="space-y-4">
                 {/* 目标信息区域 */}
                 <div className="space-y-2 text-sm">
@@ -237,7 +238,7 @@ const ImageFraming: React.FC = () => {
               </div>
             </ScrollArea>
           </CardContent>
-          <CardFooter className="flex justify-end p-2">
+          <CardFooter className="flex justify-end p-2 border-t border-white/10">
             <Button
               variant="ghost"
               size="sm"
@@ -245,22 +246,24 @@ const ImageFraming: React.FC = () => {
               className="text-white/80 hover:text-white"
             >
               {viewState.rightPanelCollapsed ? (
-                <ChevronLeft />
+                <ChevronLeft className="h-4 w-4" />
               ) : (
-                <ChevronRight />
+                <ChevronRight className="h-4 w-4" />
               )}
             </Button>
           </CardFooter>
         </Card>
       </motion.div>
 
-      <div className="fixed bottom-2 left-1/2 transform -translate-x-1/2 w-[80%] max-w-3xl z-40 flex flex-col-2 items-center gap-2">
+      {/* 底部控制栏 - 使用固定高度和响应式布局 */}
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[95%] max-w-4xl z-40">
         <motion.div
+          className="grid grid-cols-1 md:grid-cols-2 gap-2"
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className="flex-1"
         >
+          {/* 坐标信息 */}
           <Alert
             variant="default"
             className="bg-black/50 backdrop-blur-md border border-white/10 text-white p-2"
@@ -273,13 +276,8 @@ const ImageFraming: React.FC = () => {
               </span>
             </div>
           </Alert>
-        </motion.div>
 
-        <motion.div
-          initial={{ y: -100 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="flex-1"
-        >
+          {/* 控制按钮组 */}
           <div className="flex items-center justify-center gap-2 bg-black/50 backdrop-blur-md rounded-lg p-1">
             <Button
               variant="ghost"
@@ -353,8 +351,9 @@ const ImageFraming: React.FC = () => {
         </motion.div>
       </div>
 
+      {/* Logo 动画 */}
       <motion.div
-        className="fixed left-1 top-1 w-6 h-6 bg-black/50 backdrop-blur-md rounded-full z-40"
+        className="fixed left-4 top-4 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full z-40 flex items-center justify-center"
         animate={{ rotate: 360 }}
         transition={{
           duration: 10,
@@ -364,10 +363,10 @@ const ImageFraming: React.FC = () => {
       >
         <Image
           src="/atom.png"
-          width={24}
-          height={24}
+          width={32}
+          height={32}
           alt="logo"
-          className="w-full h-full"
+          className="w-6 h-6"
         />
       </motion.div>
 

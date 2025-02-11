@@ -3,7 +3,7 @@
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
-import { useSequencerStore } from "@/store/useSequencerStore";
+import { useSequencerStore } from "@/stores/sequencer";
 import {
   Tooltip,
   TooltipContent,
@@ -14,9 +14,9 @@ import { Clock, AlertTriangle, CheckCircle } from "lucide-react";
 
 export function TargetProgress() {
   const { targets, activeTargetId, taskStatuses } = useSequencerStore();
-  
+
   const activeTarget = targets.find((t) => t.id === activeTargetId);
-  
+
   if (!activeTarget) return null;
 
   const totalTasks = activeTarget.tasks.length;
@@ -26,7 +26,7 @@ export function TargetProgress() {
   const failedTasks = activeTarget.tasks.filter(
     (task) => taskStatuses[task.id]?.status === "failed"
   ).length;
-  
+
   const progress = (completedTasks / totalTasks) * 100;
 
   return (
@@ -44,15 +44,21 @@ export function TargetProgress() {
               已完成 {completedTasks} / {totalTasks} 个任务
             </div>
           </div>
-          
+
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
                 <div className="flex space-x-1">
-                  <Badge variant="outline" className="h-6 bg-green-500/10 hover:bg-green-500/20">
+                  <Badge
+                    variant="outline"
+                    className="h-6 bg-green-500/10 hover:bg-green-500/20"
+                  >
                     {completedTasks}
                   </Badge>
-                  <Badge variant="outline" className="h-6 bg-red-500/10 hover:bg-red-500/20">
+                  <Badge
+                    variant="outline"
+                    className="h-6 bg-red-500/10 hover:bg-red-500/20"
+                  >
                     {failedTasks}
                   </Badge>
                 </div>

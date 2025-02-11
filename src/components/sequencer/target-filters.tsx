@@ -13,15 +13,17 @@ import { Button } from "@/components/ui/button";
 import { Filter, X } from "lucide-react";
 import { motion } from "framer-motion";
 
+interface TargetFiltersType {
+  search: string;
+  type: string;
+  category: string;
+  sortBy: string;
+  sortOrder: "asc" | "desc";
+}
+
 interface TargetFiltersProps {
-  filters: {
-    search: string;
-    type: string;
-    category: string;
-    sortBy: string;
-    sortOrder: "asc" | "desc";
-  };
-  onChange: (filters: any) => void;
+  filters: TargetFiltersType;
+  onChange: (filters: TargetFiltersType) => void;
   onReset: () => void;
 }
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Target, CoordinateData, ExposureTask } from "@/types/sequencer";
+import { CoordinateData, ExposureTask } from "@/types/sequencer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Accordion,
@@ -74,7 +74,9 @@ export function TargetList({}: TargetListProps) {
   };
 
   const filteredTargets = targets.filter((target) => {
-    const matchQuery = target.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchQuery = target.name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
     const matchFilter = filter === "全部" || target.category === filter;
     return matchQuery && matchFilter;
   });
@@ -120,7 +122,11 @@ export function TargetList({}: TargetListProps) {
             </SelectContent>
           </Select>
         </div>
-        <Button variant="outline" size="sm" onClick={() => console.log("Add target")}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => console.log("Add target")}
+        >
           <Plus className="h-4 w-4" />
         </Button>
         <Dialog open={showSettings} onOpenChange={setShowSettings}>
@@ -140,16 +146,30 @@ export function TargetList({}: TargetListProps) {
         </Dialog>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={filteredTargets.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={onDragEnd}
+      >
+        <SortableContext
+          items={filteredTargets.map((t) => t.id)}
+          strategy={verticalListSortingStrategy}
+        >
           <AnimatePresence>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-1 p-1">
               {filteredTargets.map((target) => (
                 <SortableItem key={target.id} value={target.id}>
-                  <motion.div layout initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
+                  <motion.div
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                  >
                     <Card
                       className={`cursor-pointer hover:bg-gray-800/50 transition-colors border ${
-                        target.id === activeTargetId ? "border-teal-500" : "border-gray-700"
+                        target.id === activeTargetId
+                          ? "border-teal-500"
+                          : "border-gray-700"
                       }`}
                       onClick={() =>
                         updateTarget(target.id, {
@@ -157,11 +177,14 @@ export function TargetList({}: TargetListProps) {
                           name: target.name,
                           coordinates: target.coordinates,
                           tasks: target.tasks,
+                          settings: target.settings,
                         })
                       }
                     >
                       <CardHeader className="p-2">
-                        <CardTitle className="text-sm truncate">{target.name}</CardTitle>
+                        <CardTitle className="text-sm truncate">
+                          {target.name}
+                        </CardTitle>
                       </CardHeader>
                       <CardContent className="p-2">
                         <Accordion type="single" collapsible>
@@ -171,18 +194,24 @@ export function TargetList({}: TargetListProps) {
                               <CoordinateInput
                                 label="RA"
                                 value={mapCoordinates(target.coordinates)}
-                                onChange={(val) => console.log("RA changed", val)}
+                                onChange={(val) =>
+                                  console.log("RA changed", val)
+                                }
                               />
                               <CoordinateInput
                                 label="Dec"
                                 value={mapCoordinates(target.coordinates)}
-                                onChange={(val) => console.log("Dec changed", val)}
+                                onChange={(val) =>
+                                  console.log("Dec changed", val)
+                                }
                               />
                               {target.tasks && target.tasks.length > 0 && (
                                 <TaskList
                                   tasks={target.tasks as ExposureTask[]}
                                   onAddTask={() => console.log("Add task")}
-                                  onUpdateTasks={(tasks) => console.log("Update tasks", tasks)}
+                                  onUpdateTasks={(tasks) =>
+                                    console.log("Update tasks", tasks)
+                                  }
                                 />
                               )}
                             </AccordionContent>
@@ -221,13 +250,13 @@ function CoordinateInput({ label, value, onChange }: CoordinateInputProps) {
       <div className="flex space-x-2">
         <Input
           type="number"
-          value={isRA ? (coords?.h ?? 0) : (coords?.d ?? 0)}
+          value={isRA ? coords?.m ?? 0 : coords?.s ?? 0}
           onChange={(e) =>
             onChange({
-              [isRA ? 'ra' : 'dec']: {
+              [isRA ? "ra" : "dec"]: {
                 ...coords,
-                [isRA ? 'h' : 'd']: Number(e.target.value)
-              }
+                [isRA ? "h" : "d"]: Number(e.target.value),
+              },
             })
           }
           className="w-16 bg-dark-700 text-dark-200"
@@ -238,10 +267,10 @@ function CoordinateInput({ label, value, onChange }: CoordinateInputProps) {
           value={coords?.m ?? 0}
           onChange={(e) =>
             onChange({
-              [isRA ? 'ra' : 'dec']: {
+              [isRA ? "ra" : "dec"]: {
                 ...coords,
-                m: Number(e.target.value)
-              }
+                m: Number(e.target.value),
+              },
             })
           }
           className="w-16 bg-dark-700 text-dark-200"
@@ -252,10 +281,10 @@ function CoordinateInput({ label, value, onChange }: CoordinateInputProps) {
           value={coords?.s ?? 0}
           onChange={(e) =>
             onChange({
-              [isRA ? 'ra' : 'dec']: {
+              [isRA ? "ra" : "dec"]: {
                 ...coords,
-                s: Number(e.target.value)
-              }
+                s: Number(e.target.value),
+              },
             })
           }
           className="w-16 bg-dark-700 text-dark-200"
@@ -275,7 +304,9 @@ interface TaskListProps {
 function TaskList({ tasks, onAddTask, onUpdateTasks }: TaskListProps) {
   const editTask = (taskId: string, newName: string, newDuration: number) => {
     const updatedTasks = tasks.map((task) =>
-      task.id === taskId ? { ...task, name: newName, duration: newDuration } : task
+      task.id === taskId
+        ? { ...task, name: newName, duration: newDuration }
+        : task
     );
     onUpdateTasks(updatedTasks);
   };
@@ -288,7 +319,10 @@ function TaskList({ tasks, onAddTask, onUpdateTasks }: TaskListProps) {
   return (
     <ul className="space-y-2 mt-2">
       {tasks.map((task) => (
-        <li key={task.id} className="flex flex-col bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+        <li
+          key={task.id}
+          className="flex flex-col bg-gray-800/50 p-3 rounded-lg border border-gray-700"
+        >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Switch
@@ -307,7 +341,9 @@ function TaskList({ tasks, onAddTask, onUpdateTasks }: TaskListProps) {
                 size="sm"
                 onClick={() => {
                   const newName = prompt("输入新的任务名称", task.name);
-                  const newDuration = Number(prompt("输入新的持续时间（秒）", task.duration.toString()));
+                  const newDuration = Number(
+                    prompt("输入新的持续时间（秒）", task.duration.toString())
+                  );
                   if (newName && !isNaN(newDuration)) {
                     editTask(task.id, newName, newDuration);
                   }
@@ -341,7 +377,10 @@ function TaskList({ tasks, onAddTask, onUpdateTasks }: TaskListProps) {
             </div>
           </div>
           <div className="mt-2">
-            <Progress value={(task.progress[0] / task.progress[1]) * 100} className="h-1" />
+            <Progress
+              value={(task.progress[0] / task.progress[1]) * 100}
+              className="h-1"
+            />
           </div>
         </li>
       ))}

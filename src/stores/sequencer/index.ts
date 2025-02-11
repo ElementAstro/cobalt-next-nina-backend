@@ -19,6 +19,15 @@ export interface MyNotification {
   read: boolean;
 }
 
+export interface AutofocusConfig {
+  enabled: boolean;
+  interval: number;
+  tempDelta: number;
+  method: "hfd" | "curvature" | "bahtinov";
+  autofocusOnFilterChange: boolean;
+  autofocusOnTemperatureChange: boolean;
+}
+
 interface ImportData {
   targets: Target[];
   settings: TargetSettings;
@@ -32,6 +41,8 @@ interface ImportData {
     method: string;
     autofocusOnFilterChange: boolean;
     autofocusOnTemperatureChange: boolean;
+    maxHFD: number;
+    targetHFD: number;
   };
 }
 
@@ -58,6 +69,8 @@ export interface SequencerStateData {
     method: string;
     autofocusOnFilterChange: boolean;
     autofocusOnTemperatureChange: boolean;
+    maxHFD: number;
+    targetHFD: number;
   };
   deviceStatus: {
     camera: {
@@ -165,6 +178,7 @@ export interface SequencerActions {
   removeTaskDependency: (taskId: string) => void;
   checkTaskDependencies: (taskId: string) => Promise<boolean>;
   validateTask: (taskId: string) => Promise<boolean>;
+  setAutofocusConfig: (config: Partial<AutofocusConfig>) => void;
   rollbackTask: (taskId: string) => Promise<void>;
   executeTask: (task: ExposureTask) => Promise<void>;
 }
@@ -218,6 +232,8 @@ export const useSequencerStore = create<SequencerState>()(
         method: "hfd",
         autofocusOnFilterChange: true,
         autofocusOnTemperatureChange: true,
+        maxHFD: 4.0,
+        targetHFD: 2.5,
       },
       weatherData: null,
       executionStatus: {
@@ -603,3 +619,6 @@ export const useFocusQualityMetrics = () =>
   useSequencerStore((state) => state.focusQualityMetrics);
 export const useExposureOptimization = () =>
   useSequencerStore((state) => state.exposureOptimization);
+export const useAutofocusConfig = () => {
+  return useSequencerStore((state) => state.autofocusConfig);
+};

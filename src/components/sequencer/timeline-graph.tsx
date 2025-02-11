@@ -23,9 +23,8 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useSequencerStore } from "@/store/useSequencerStore";
-import { fetchSequencerData } from "@/services/mock/sequencer";
+import { useState } from "react";
+import { useSequencerStore } from "@/stores/sequencer";
 
 interface TimelineGraphProps {
   data: TimelineData[];
@@ -101,22 +100,10 @@ export function TimelineGraph(props: TimelineGraphProps) {
   const { timeline, isRunning, startSequence, pauseSequence, stopSequence } =
     useSequencerStore();
 
-  const [data, setData] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      await fetchSequencerData(); // 可复用初始数据
-      const timeline = Array.from({ length: 24 }, (_, i) => ({
-        time: i.toString().padStart(2, "0"),
-        value: i >= 3 && i <= 6 ? 90 : 30,
-      }));
-      setData(timeline);
-    };
-    fetchData();
-  }, []);
-
   const formattedData = timeline.map((item, index) => {
-    const dataPoint: any = { hour: `${index}:00` };
+    const dataPoint: { hour: string; [key: string]: number | string } = {
+      hour: `${index}:00`,
+    };
     if (Array.isArray(item.value)) {
       item.value.forEach((val, i) => {
         dataPoint[`value${i}`] = val;

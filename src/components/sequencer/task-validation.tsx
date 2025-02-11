@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useSequencerStore } from "@/store/useSequencerStore";
+import { useSequencerStore } from "@/stores/sequencer";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -27,7 +27,7 @@ export function TaskValidation() {
   const [isValidating, setIsValidating] = useState(false);
 
   const activeTarget = targets.find((t) => t.id === activeTargetId);
-  
+
   if (!activeTarget) return null;
 
   const handleValidateAll = async () => {
@@ -64,22 +64,34 @@ export function TaskValidation() {
         <Table>
           <TableHeader className="bg-gray-800/50">
             <TableRow>
-              <TableHead className="font-medium text-xs py-2">任务名称</TableHead>
-              <TableHead className="font-medium text-xs py-2 text-center">尝试</TableHead>
-              <TableHead className="font-medium text-xs py-2 text-center">成功</TableHead>
-              <TableHead className="font-medium text-xs py-2 text-right">状态</TableHead>
+              <TableHead className="font-medium text-xs py-2">
+                任务名称
+              </TableHead>
+              <TableHead className="font-medium text-xs py-2 text-center">
+                尝试
+              </TableHead>
+              <TableHead className="font-medium text-xs py-2 text-center">
+                成功
+              </TableHead>
+              <TableHead className="font-medium text-xs py-2 text-right">
+                状态
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {activeTarget.tasks.map((task) => {
               const validation = taskValidation[task.id];
               const status = taskStatuses[task.id];
-              
+
               return (
                 <TableRow key={task.id} className="hover:bg-gray-800/30">
                   <TableCell className="py-1 text-sm">{task.name}</TableCell>
-                  <TableCell className="py-1 text-sm text-center">{validation?.attempts || 0}</TableCell>
-                  <TableCell className="py-1 text-sm text-center">{validation?.successes || 0}</TableCell>
+                  <TableCell className="py-1 text-sm text-center">
+                    {validation?.attempts || 0}
+                  </TableCell>
+                  <TableCell className="py-1 text-sm text-center">
+                    {validation?.successes || 0}
+                  </TableCell>
                   <TableCell className="py-1">
                     <div className="flex items-center justify-end space-x-1">
                       {status?.status === "completed" ? (

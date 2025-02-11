@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion } from "framer-motion"; // Remove AnimatePresence
 import { Progress } from "@/components/ui/progress";
 import { Check, AlertCircle, Clock, Play } from "lucide-react"; // Remove Pause
@@ -47,10 +47,9 @@ import {
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { SortableItem } from "./sortable-item";
-import { useSequencerStore } from "@/store/useSequencerStore";
-import { ExposureTask, Task, TaskGroup } from "@/types/sequencer";
+import { useSequencerStore } from "@/stores/sequencer";
+import { ExposureTask, TaskGroup } from "@/types/sequencer";
 import { debounce } from "lodash";
-import { updateTaskMock } from "@/services/mock/sequencer";
 
 interface TaskStatus {
   status: "pending" | "running" | "completed" | "failed";
@@ -80,6 +79,59 @@ interface ExposureTaskListProps {
   onGroupsChange?: (groups: TaskGroup[]) => void;
 }
 
+interface SortableItemProps {
+  children: React.ReactNode;
+  task: ExposureTask;
+  onSelect: (taskId: string, selected: boolean) => void;
+  selected: boolean;
+}
+
+function TaskGroupingDialog({
+  selectedTasks,
+  onCreateGroup,
+  onClose,
+}: {
+  selectedTasks: string[];
+  onCreateGroup: (name: string, taskIds: string[]) => void;
+  onClose: () => void;
+}) {
+  const [groupName, setGroupName] = useState("");
+
+  return (
+    <Dialog open onOpenChange={() => onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>创建任务组</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="group-name">组名称</Label>
+            <Input
+              id="group-name"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button onClick={() => onCreateGroup(groupName, selectedTasks)}>
+              创建
+            </Button>
+            <Button variant="outline" onClick={onClose}>
+              取消
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const updateTaskMock = async (task: ExposureTask) => {
+  // 模拟异步操作
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  return task;
+};
+
 export function ExposureTaskList({
   groups = [],
   onGroupsChange,
@@ -94,13 +146,20 @@ export function ExposureTaskList({
   );
 
   // Helper to update tasks of the active target
-  const updateTasks = (newTasks: ExposureTask[]) => {
-    if (activeTargetId && target) {
-      updateTarget(activeTargetId, { ...target, tasks: newTasks });
-    }
-  };
+  const updateTasks = useCallback(
+    (newTasks: ExposureTask[]) => {
+      if (activeTargetId && target) {
+        updateTarget(activeTargetId, { ...target, tasks: newTasks });
+      }
+    },
+    [activeTargetId, target, updateTarget]
+  );
 
   const handleTaskStatusUpdate = (taskId: string, status: TaskStatus) => {
+    setTaskStatus((prev) => ({
+      ...prev,
+      [taskId]: { ...status },
+    }));
     updateTaskStatus(taskId, status);
   };
 
@@ -160,8 +219,6 @@ export function ExposureTaskList({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("ALL");
 
-  const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
-
   const filteredTasks = useMemo(() => {
     return tasks.filter(
       (task) =>
@@ -210,7 +267,11 @@ export function ExposureTaskList({
   };
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -279,21 +340,23 @@ export function ExposureTaskList({
 
   const handleBulkAction = (action: "enable" | "disable" | "delete") => {
     const selectedIds = Array.from(bulkActions.selectedTasks);
+    let updatedTasks = [...tasks];
+
     switch (action) {
       case "enable":
       case "disable":
-        updateTasks(
-          tasks.map((task) =>
-            selectedIds.includes(task.id)
-              ? { ...task, enabled: action === "enable" }
-              : task
-          )
+        updatedTasks = tasks.map((task) =>
+          selectedIds.includes(task.id)
+            ? { ...task, enabled: action === "enable" }
+            : task
         );
         break;
       case "delete":
-        updateTasks(tasks.filter((task) => !selectedIds.includes(task.id)));
+        updatedTasks = tasks.filter((task) => !selectedIds.includes(task.id));
         break;
     }
+
+    updateTasks(updatedTasks);
     setBulkActions({ selectedTasks: new Set(), isSelectAll: false });
   };
 
@@ -358,12 +421,7 @@ export function ExposureTaskList({
     if (over && active.id !== over.id) {
       const oldIndex = tasks.findIndex((task) => task.id === active.id);
       const newIndex = tasks.findIndex((task) => task.id === over.id);
-
-      setTasks((prev) => {
-        const next = arrayMove(prev, oldIndex, newIndex);
-        debouncedUpdateTasks(next);
-        return next;
-      });
+      setTasks((tasks) => arrayMove(tasks, oldIndex, newIndex));
     }
   };
 
@@ -390,142 +448,189 @@ export function ExposureTaskList({
   }, [tasks, taskStatus, updateTaskStatus]);
 
   return (
-    <div className="p-1">
-      {/* 搜索和控制栏 - 更紧凑的布局 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-        <div className="flex items-center space-x-1">
-          <Input
-            placeholder="搜索任务..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-gray-800/50"
-          />
-          <Select value={selectedType} onValueChange={setSelectedType}>
-            <SelectTrigger className="w-32 bg-gray-800/50">
-              <SelectValue placeholder="筛选类型" />
-            </SelectTrigger>
-            <SelectContent className="bg-gray-800 border-gray-700">
-              <SelectItem value="ALL">全部</SelectItem>
-              <SelectItem value="LIGHT">LIGHT</SelectItem>
-              <SelectItem value="DARK">DARK</SelectItem>
-              <SelectItem value="FLAT">FLAT</SelectItem>
-              <SelectItem value="BIAS">BIAS</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex justify-end space-x-1 md:col-span-2">
-          <Button
-            variant="outline"
-            onClick={handleBatchDelete}
-            className="bg-gray-800/50 border-gray-700 hover:bg-gray-700"
-          >
-            批量删除
-          </Button>
-          <Button
-            onClick={handleAddTask}
-            className="bg-teal-500 hover:bg-teal-600"
-          >
-            添加任务
-          </Button>
-        </div>
-      </div>
-
-      {/* 表格布局优化 */}
-      <div className="rounded-md border border-gray-700 overflow-hidden">
-        <Table>
-          <TableHeader className="bg-gray-900/50">
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="w-10">状态</TableHead>
-              <TableHead className="w-1/4">名称</TableHead>
-              <TableHead className="w-20">类型</TableHead>
-              <TableHead className="w-16">总数</TableHead>
-              <TableHead className="w-20">时间</TableHead>
-              <TableHead className="w-32">进度</TableHead>
-              <TableHead className="w-20">筛选</TableHead>
-              <TableHead className="w-20">分辨率</TableHead>
-              <TableHead className="w-24">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody className="bg-gray-800/30">
-            {filteredTasks.map((task) => (
-              <SortableItem key={task.id} task={task}>
-                <TableRow
-                  className={
-                    taskStatus[task.id]?.status === "completed"
-                      ? "bg-green-900/10"
-                      : ""
-                  }
-                >
-                  <TableCell>
-                    <Switch
-                      checked={task.enabled}
-                      onCheckedChange={(checked) =>
-                        updateTask({ ...task, enabled: checked })
-                      }
-                    />
-                  </TableCell>
-                  <TableCell className="flex items-center gap-1">
-                    {task.name}
-                    {getStatusIcon(taskStatus[task.id]?.status)}
-                  </TableCell>
-                  <TableCell>{task.type}</TableCell>
-                  <TableCell>{task.total}</TableCell>
-                  <TableCell>{task.time}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center space-x-2">
-                      <Progress
-                        value={(task.progress[0] / task.progress[1]) * 100}
-                        className="h-2 w-24"
-                      />
-                      <span className="text-sm">
-                        {task.progress.join(" / ")}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{task.filter}</TableCell>
-                  <TableCell>{task.binning}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
-                      <Button
-                        size="sm"
-                        onClick={() => editTask(task)}
-                        className="bg-teal-500 text-white"
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => removeTask(task.id)}
-                        className="bg-red-500 text-white"
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              </SortableItem>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="bg-gray-900 border-gray-800">
-          <DialogHeader>
-            <DialogTitle>编辑任务</DialogTitle>
-          </DialogHeader>
-          {editingTask && (
-            <TaskEditForm
-              task={editingTask}
-              onSave={updateTask}
-              onCancel={() => setIsDialogOpen(false)}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[restrictToVerticalAxis]}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="p-1">
+        {/* 搜索和控制栏 - 更紧凑的布局 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+          <div className="flex items-center space-x-1">
+            <Input
+              placeholder="搜索任务..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-gray-800/50"
             />
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+            <Select value={selectedType} onValueChange={setSelectedType}>
+              <SelectTrigger className="w-32 bg-gray-800/50">
+                <SelectValue placeholder="筛选类型" />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-800 border-gray-700">
+                <SelectItem value="ALL">全部</SelectItem>
+                <SelectItem value="LIGHT">LIGHT</SelectItem>
+                <SelectItem value="DARK">DARK</SelectItem>
+                <SelectItem value="FLAT">FLAT</SelectItem>
+                <SelectItem value="BIAS">BIAS</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex justify-end space-x-1 md:col-span-2">
+            <Button
+              variant="outline"
+              onClick={handleBatchDelete}
+              className="bg-gray-800/50 border-gray-700 hover:bg-gray-700"
+            >
+              批量删除
+            </Button>
+            <Button
+              onClick={handleAddTask}
+              className="bg-teal-500 hover:bg-teal-600"
+            >
+              添加任务
+            </Button>
+          </div>
+        </div>
+
+        {/* 表格布局优化 */}
+        <div className="rounded-md border border-gray-700 overflow-hidden">
+          <Table>
+            <TableHeader className="bg-gray-900/50">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10">状态</TableHead>
+                <TableHead className="w-1/4">名称</TableHead>
+                <TableHead className="w-20">类型</TableHead>
+                <TableHead className="w-16">总数</TableHead>
+                <TableHead className="w-20">时间</TableHead>
+                <TableHead className="w-32">进度</TableHead>
+                <TableHead className="w-20">筛选</TableHead>
+                <TableHead className="w-20">分辨率</TableHead>
+                <TableHead className="w-24">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <SortableContext
+              items={filteredTasks.map((task) => task.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <TableBody className="bg-gray-800/30">
+                {filteredTasks.map((task) => (
+                  <SortableItem
+                    key={task.id}
+                    id={task.id}
+                    task={task}
+                    onSelect={handleTaskSelection}
+                    selected={selectedTasks.has(task.id)}
+                  >
+                    <TableRow
+                      className={
+                        taskStatus[task.id]?.status === "completed"
+                          ? "bg-green-900/10"
+                          : ""
+                      }
+                    >
+                      <TableCell>
+                        <Switch
+                          checked={task.enabled}
+                          onCheckedChange={(checked) =>
+                            updateTask({ ...task, enabled: checked })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="flex items-center gap-1">
+                        {task.name}
+                        {getStatusIcon(taskStatus[task.id]?.status)}
+                      </TableCell>
+                      <TableCell>{task.type}</TableCell>
+                      <TableCell>{task.total}</TableCell>
+                      <TableCell>{task.time}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Progress
+                            value={(task.progress[0] / task.progress[1]) * 100}
+                            className="h-2 w-24"
+                          />
+                          <span className="text-sm">
+                            {task.progress.join(" / ")}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{task.filter}</TableCell>
+                      <TableCell>{task.binning}</TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            onClick={() => editTask(task)}
+                            className="bg-teal-500 text-white"
+                          >
+                            编辑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => removeTask(task.id)}
+                            className="bg-red-500 text-white"
+                          >
+                            删除
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  </SortableItem>
+                ))}
+              </TableBody>
+            </SortableContext>
+          </Table>
+        </div>
+
+        {/* 添加批量操作按钮 */}
+        {selectedTasks.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed bottom-4 right-4 flex gap-2"
+          >
+            <Button onClick={() => handleBulkAction("enable")}>启用所选</Button>
+            <Button onClick={() => handleBulkAction("disable")}>
+              禁用所选
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => handleBulkAction("delete")}
+            >
+              删除所选
+            </Button>
+          </motion.div>
+        )}
+
+        {/* 分组管理对话框 */}
+        {groupingMode === "custom" && selectedTasks.size > 0 && (
+          <TaskGroupingDialog
+            selectedTasks={Array.from(selectedTasks)}
+            onCreateGroup={createTaskGroup}
+            onClose={() => setGroupingMode("none")}
+          />
+        )}
+
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="bg-gray-900 border-gray-800">
+            <DialogHeader>
+              <DialogTitle>编辑任务</DialogTitle>
+            </DialogHeader>
+            {editingTask && (
+              <TaskEditForm
+                task={editingTask}
+                onSave={updateTask}
+                onCancel={() => setIsDialogOpen(false)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </DndContext>
   );
 }
 

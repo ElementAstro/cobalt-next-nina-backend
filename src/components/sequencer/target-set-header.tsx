@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Button as BaseButton } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { useSequencerStore } from "@/store/useSequencerStore";
+import { useSequencerStore } from "@/stores/sequencer";
 import {
   Select,
   SelectContent,
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 const Button = motion(BaseButton);
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react"; // 移除未使用的图标
 import { AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -125,26 +125,21 @@ function SwitchOption({
 }
 
 export function TargetSetHeader() {
-  const {
-    settings,
-    setSetting,
-    saveSettings,
-    notifications,
-    errors,
-    clearErrors,
-    targets,
-    activeTargetId,
-    updateTarget,
-  } = useSequencerStore();
+  const { errors, clearErrors, targets, activeTargetId, updateTarget } =
+    useSequencerStore();
 
   useEffect(() => {
     if (errors.length > 0) {
-      // 显示错误通知
       setTimeout(clearErrors, 5000);
     }
-  }, [errors]);
+  }, [errors, clearErrors]); // 添加 clearErrors 到依赖数组
 
-  const [options, setOptions] = useState<TargetSetOptions>(DEFAULT_OPTIONS);
+  const [options, setOptions] = useState<TargetSetOptions>({
+    ...DEFAULT_OPTIONS,
+    dithering: true, // 保留默认启用的重要选项
+    safetyChecks: true,
+    unparkMount: true,
+  });
   const [isStartOptionsCollapsed, setIsStartOptionsCollapsed] = useState(true);
   const [isEndOptionsCollapsed, setIsEndOptionsCollapsed] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -324,6 +319,14 @@ export function TargetSetHeader() {
                   rotation: 0,
                 },
                 tasks: [],
+                settings: {
+                  ...DEFAULT_OPTIONS,
+                  delayStart: "",
+                  sequenceMode: "loop",
+                  startTime: "",
+                  endTime: "",
+                  duration: "",
+                },
               })
             }
           >

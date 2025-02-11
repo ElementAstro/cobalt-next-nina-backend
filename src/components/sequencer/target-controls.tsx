@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useSequencerStore } from "@/store/useSequencerStore";
+import { useSequencerStore } from "@/stores/sequencer"; // 修正导入路径
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -14,9 +14,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Play, StopCircle, ChevronDown, Loader2, Save, Pause, Square } from "lucide-react";
+import {
+  X,
+  Play,
+  StopCircle,
+  ChevronDown,
+  Loader2,
+  Save,
+  Pause,
+} from "lucide-react";
 import { useMediaQuery } from "react-responsive";
-import { TargetSettings } from "@/store/useSequencerStore";
+import { TargetSettings } from "@/types/sequencer";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -51,7 +59,7 @@ interface TargetControlsState {
   presets: Array<{
     id: string;
     name: string;
-    settings: any;
+    settings: TargetSettings & AdvancedSettings; // 修复第一个 any
     createdAt: Date;
     lastUsed?: Date;
   }>;
@@ -63,7 +71,6 @@ export function TargetControls() {
     setSetting,
     saveSettings,
     resetSettings,
-    // Rename store error to avoid conflict with local state errors
     errors: storeErrors,
     notifications,
     isRunning,
@@ -94,13 +101,17 @@ export function TargetControls() {
     null
   );
   const [isCollapsed, setIsCollapsed] = React.useState(false);
+  const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
+  const [isExpanded, setIsExpanded] = React.useState(!isMobile);
 
   const handleSavePreset = () => {
     const presetName = prompt("请输入预设名称");
     if (presetName) {
       const newPreset = {
+        id: Date.now().toString(),
         name: presetName,
         settings: { ...settings, ...state.advancedSettings },
+        createdAt: new Date(),
       };
       setPresets((prev) => [...prev, newPreset]);
     }
@@ -119,16 +130,14 @@ export function TargetControls() {
       setSelectedPreset(presetName);
     }
   };
-  const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
-  const [isExpanded, setIsExpanded] = React.useState(!isMobile);
 
   const handleChange = (field: keyof TargetSettings, value: string) => {
-    setSetting(field, value);
+    setSetting(field as keyof TargetSettings, value); // 添加类型断言
   };
 
   const handleAdvancedChange = (
     field: keyof AdvancedSettings,
-    value: string
+    value: string | number // 修改参数类型
   ) => {
     setState((prev) => ({
       ...prev,
@@ -143,80 +152,64 @@ export function TargetControls() {
     setIsExpanded((prev) => !prev);
   };
 
-  const handleSave = async () => {
-    try {
-      await saveSettings();
-    } catch (error) {
-      // 错误已经在 store 中处理
-    }
-  };
-
-  // 添加验证函数
-  const validateSettings = (settings: any) => {
+  const validateSettings = (settingsObj: TargetSettings) => {
+    // 修复第二个 any
     const errors: Record<string, string> = {};
-    if (settings.delayStart < 0) {
+    if (+settingsObj.delayStart < 0) {
       errors.delayStart = "延迟开始时间不能为负数";
     }
-    if (settings.retryCount < 0 || settings.retryCount > 10) {
+    if (
+      typeof settingsObj.retryCount === "number" &&
+      (settingsObj.retryCount < 0 || settingsObj.retryCount > 10)
+    ) {
       errors.retryCount = "重试次数必须在0-10之间";
     }
-    if (settings.timeout < 0 || settings.timeout > 3600) {
+    if (
+      typeof settingsObj.timeout === "number" &&
+      (settingsObj.timeout < 0 || settingsObj.timeout > 3600)
+    ) {
       errors.timeout = "超时时间必须在0-3600秒之间";
     }
     return errors;
   };
 
-  // 按钮点击动画变体
-  const buttonVariants = {
-    hover: { scale: 1.05 },
-    tap: { scale: 0.95 },
-    focus: { scale: 1.02 },
-  };
-
-  // 面板动画变体
-  const panelVariants = {
-    expanded: {
-      opacity: 1,
-      height: "auto",
-      transition: {
-        type: "spring",
-        stiffness: 100,
-        damping: 15,
-      },
-    },
-    collapsed: {
-      opacity: 0,
-      height: 0,
-      transition: {
-        type: "spring",
-        stiffness: 100,
-        damping: 15,
-      },
-    },
-  };
-
-  const deviceStatus = useSequencerStore((state) => state.deviceStatus);
-  const updateDeviceStatus = useSequencerStore((state) => state.updateDeviceStatus);
-  const synchronizeDevices = useSequencerStore((state) => state.synchronizeDevices);
-
-  // 添加温度控制
-  const handleTemperatureChange = (temp: number) => {
-    updateDeviceStatus('camera', { targetTemp: temp });
-  };
-
-  // 添加设备同步
-  const handleSyncDevices = async () => {
-    await synchronizeDevices();
-  };
-
-  // 添加追踪控制
-  const toggleTracking = () => {
-    updateDeviceStatus('mount', { tracking: !deviceStatus.mount.tracking });
+  const handleSave = async () => {
+    const errorsFound = validateSettings(settings);
+    if (Object.keys(errorsFound).length > 0) {
+      setState((prev) => ({ ...prev, errors: errorsFound }));
+      return;
+    }
+    setState((prev) => ({ ...prev, isSaving: true }));
+    try {
+      await saveSettings();
+    } catch (err) {
+      console.error("保存设置失败", err);
+    } finally {
+      setState((prev) => ({ ...prev, isSaving: false }));
+    }
   };
 
   return (
     <div className="bg-gray-900 rounded-md shadow-md">
-      {/* 可折叠头部 */}
+      {/* 系统通知 */}
+      <AnimatePresence>
+        {notifications.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="p-2 bg-blue-800 text-white rounded-t-md"
+          >
+            {notifications.map((noti) => (
+              <div key={noti.id} className="text-sm">
+                {noti.message}
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 可折叠区域 */}
       <Collapsible open={!isCollapsed} onOpenChange={setIsCollapsed}>
         <CollapsibleTrigger asChild>
           <Button
@@ -234,48 +227,10 @@ export function TargetControls() {
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          {/* 主内容区域 - 固定高度 */}
+          {/* 主内容区域 */}
           <div className="h-[50vh]">
             <ScrollArea className="h-full">
               <div className="p-4 space-y-4">
-                {/* 设备状态面板 */}
-                <div className="bg-gray-800/50 p-3 rounded-lg">
-                  <h3 className="text-sm font-medium mb-2">设备状态</h3>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div>
-                      <div className="text-gray-400">相机温度</div>
-                      <div className="flex items-center space-x-2">
-                        <span>{deviceStatus.camera.temperature}°C</span>
-                        {deviceStatus.camera.cooling && (
-                          <span className="text-blue-400">(冷却中)</span>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">赤道仪</div>
-                      <div className="flex items-center space-x-2">
-                        <span>{deviceStatus.mount.tracking ? "追踪中" : "已停止"}</span>
-                        {deviceStatus.mount.slewing && (
-                          <span className="text-yellow-400">(转动中)</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex space-x-2 mt-2">
-                    <Button size="sm" onClick={handleSyncDevices} disabled={isRunning}>
-                      同步设备
-                    </Button>
-                    <Button 
-                      size="sm"
-                      onClick={toggleTracking}
-                      disabled={!deviceStatus.mount.connected}
-                    >
-                      {deviceStatus.mount.tracking ? "停止追踪" : "开始追踪"}
-                    </Button>
-                  </div>
-                </div>
-
                 {/* 基础设置 */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <motion.div
@@ -338,25 +293,9 @@ export function TargetControls() {
                         <SelectItem value="one-after-another">
                           一个接一个
                         </SelectItem>
-                        <SelectItem value="simultaneous">
-                          同时进行
-                        </SelectItem>
+                        <SelectItem value="simultaneous">同时进行</SelectItem>
                       </SelectContent>
                     </Select>
-                  </motion.div>
-
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, y: 20 },
-                      visible: { opacity: 1, y: 0 },
-                    }}
-                  >
-                    <Label className="text-sm text-gray-400">
-                      预计下载时间
-                    </Label>
-                    <div className="text-white mt-1">
-                      {settings.estimatedDownload}
-                    </div>
                   </motion.div>
 
                   <motion.div
@@ -397,10 +336,7 @@ export function TargetControls() {
                       visible: { opacity: 1, y: 0 },
                     }}
                   >
-                    <Label
-                      htmlFor="timeout"
-                      className="text-sm text-gray-400"
-                    >
+                    <Label htmlFor="timeout" className="text-sm text-gray-400">
                       超时时间
                     </Label>
                     <div className="flex items-center gap-2 mt-1">
@@ -435,70 +371,77 @@ export function TargetControls() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.4 }}
                   >
-                    <div className="text-sm font-medium text-gray-400 mb-2">
-                      高级设置
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="text-sm font-medium text-gray-400">
+                        高级设置
+                      </div>
+                      <Button variant="outline" onClick={toggleExpansion}>
+                        {isExpanded ? "隐藏详情" : "显示详情"}
+                      </Button>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                      <motion.div
-                        variants={{
-                          hidden: { opacity: 0, y: 20 },
-                          visible: { opacity: 1, y: 0 },
-                        }}
-                      >
-                        <Label
-                          htmlFor="priority"
-                          className="text-sm text-gray-400"
+                    {isExpanded && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        <motion.div
+                          variants={{
+                            hidden: { opacity: 0, y: 20 },
+                            visible: { opacity: 1, y: 0 },
+                          }}
                         >
-                          任务优先级
-                        </Label>
-                        <Select
-                          value={state.advancedSettings.priority}
-                          onValueChange={(value) =>
-                            handleAdvancedChange("priority", value)
-                          }
-                        >
-                          <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                            <SelectItem value="low">低</SelectItem>
-                            <SelectItem value="medium">中</SelectItem>
-                            <SelectItem value="high">高</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </motion.div>
+                          <Label
+                            htmlFor="priority"
+                            className="text-sm text-gray-400"
+                          >
+                            任务优先级
+                          </Label>
+                          <Select
+                            value={state.advancedSettings.priority}
+                            onValueChange={(value) =>
+                              handleAdvancedChange("priority", value)
+                            }
+                          >
+                            <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-gray-800 border-gray-700 text-white">
+                              <SelectItem value="low">低</SelectItem>
+                              <SelectItem value="medium">中</SelectItem>
+                              <SelectItem value="high">高</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </motion.div>
 
-                      <motion.div
-                        variants={{
-                          hidden: { opacity: 0, y: 20 },
-                          visible: { opacity: 1, y: 0 },
-                        }}
-                      >
-                        <Label
-                          htmlFor="color-theme"
-                          className="text-sm text-gray-400"
+                        <motion.div
+                          variants={{
+                            hidden: { opacity: 0, y: 20 },
+                            visible: { opacity: 1, y: 0 },
+                          }}
                         >
-                          颜色主题
-                        </Label>
-                        <Select
-                          value={state.advancedSettings.colorTheme}
-                          onValueChange={(value) =>
-                            handleAdvancedChange("colorTheme", value)
-                          }
-                        >
-                          <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                            <SelectItem value="default">默认</SelectItem>
-                            <SelectItem value="dark">暗黑</SelectItem>
-                            <SelectItem value="light">明亮</SelectItem>
-                            <SelectItem value="blue">蓝色</SelectItem>
-                            <SelectItem value="green">绿色</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </motion.div>
-                    </div>
+                          <Label
+                            htmlFor="color-theme"
+                            className="text-sm text-gray-400"
+                          >
+                            颜色主题
+                          </Label>
+                          <Select
+                            value={state.advancedSettings.colorTheme}
+                            onValueChange={(value) =>
+                              handleAdvancedChange("colorTheme", value)
+                            }
+                          >
+                            <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-gray-800 border-gray-700 text-white">
+                              <SelectItem value="default">默认</SelectItem>
+                              <SelectItem value="dark">暗黑</SelectItem>
+                              <SelectItem value="light">明亮</SelectItem>
+                              <SelectItem value="blue">蓝色</SelectItem>
+                              <SelectItem value="green">绿色</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </motion.div>
+                      </div>
+                    )}
                   </motion.div>
                 </div>
 
@@ -538,11 +481,32 @@ export function TargetControls() {
                     </div>
                   </motion.div>
                 </div>
+
+                {/* 显示当前进度条 */}
+                <div className="mt-4">
+                  <Label className="text-sm text-gray-400">当前进度</Label>
+                  <progress
+                    className="w-full"
+                    value={currentProgress}
+                    max={100}
+                  />
+                </div>
+
+                {/* 显示Store错误（storeErrors） */}
+                {storeErrors && Object.keys(storeErrors).length > 0 && (
+                  <div className="mt-2 p-2 bg-red-800 text-white rounded">
+                    {Object.entries(storeErrors).map(([key, msg]) => (
+                      <div key={key} className="text-sm">
+                        {key}: {msg}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </ScrollArea>
           </div>
 
-          {/* 底部工具栏 - 固定在底部 */}
+          {/* 底部工具栏 */}
           <div className="border-t border-gray-800 p-2 bg-gray-900/90 backdrop-blur-sm">
             <div className="flex items-center justify-between space-x-2">
               <div className="flex items-center space-x-2">
@@ -571,14 +535,29 @@ export function TargetControls() {
               </div>
 
               <div className="flex items-center space-x-2">
-                <Button variant="ghost" size="sm" onClick={startSequence} disabled={isRunning}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={startSequence}
+                  disabled={isRunning}
+                >
                   <Play className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={pauseSequence} disabled={!isRunning}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={pauseSequence}
+                  disabled={!isRunning}
+                >
                   <Pause className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={stopSequence} disabled={!isRunning}>
-                  <Square className="w-4 h-4" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={stopSequence}
+                  disabled={!isRunning}
+                >
+                  <StopCircle className="w-4 h-4" />
                 </Button>
               </div>
             </div>
