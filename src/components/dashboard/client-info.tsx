@@ -84,7 +84,6 @@ type ClientInfo = {
 
 export function ClientInfo() {
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
-  const theme = "dark";
 
   useEffect(() => {
     const parser = new UAParser();
@@ -238,7 +237,7 @@ export function ClientInfo() {
 
   if (!clientInfo) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="h-[100dvh] flex items-center justify-center">
         <div className="animate-pulse flex flex-col items-center gap-2">
           <div className="w-8 h-8 bg-primary/20 rounded-full"></div>
           <span className="text-sm text-muted-foreground">加载中...</span>
@@ -248,180 +247,196 @@ export function ClientInfo() {
   }
 
   return (
-    <div
-      className={`container mx-auto p-2 sm:p-4 ${
-        theme === "dark" ? "bg-gray-900" : "bg-white"
-      }`}
-    >
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold">客户端信息</h1>
+    <div className="h-[100dvh] flex flex-col overflow-hidden bg-background">
+      {/* 页面标题区域 - 固定高度 */}
+      <div className="flex-none px-4 py-3 border-b">
+        <div className="flex justify-between items-center">
+          <h1 className="text-xl font-bold">客户端信息</h1>
+        </div>
       </div>
-      <motion.div
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4 xl:gap-6"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8 }}
-      >
-        <InfoCard
-          title="系统"
-          icon={Settings}
-          items={[
-            { label: "浏览器", value: clientInfo.browser },
-            { label: "操作系统", value: clientInfo.os },
-            { label: "设备类型", value: clientInfo.device },
-            { label: "屏幕分辨率", value: clientInfo.screen },
-            { label: "语言", value: clientInfo.language },
-            { label: "时区", value: clientInfo.timezone },
-          ]}
-        />
-        <InfoCard
-          title="网络"
-          icon={Wifi}
-          items={[
-            { label: "在线状态", value: clientInfo.online ? "是" : "否" },
-            {
-              label: "启用 Cookie",
-              value: clientInfo.cookiesEnabled ? "是" : "否",
-            },
-            {
-              label: "请勿追踪",
-              value:
-                clientInfo.doNotTrack === null
-                  ? "未设置"
-                  : clientInfo.doNotTrack
-                  ? "启用"
-                  : "禁用",
-            },
-            ...(clientInfo.connection
-              ? [
+
+      {/* 主内容区域 - 自适应高度和滚动 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="container mx-auto p-4">
+          <motion.div
+            className="grid gap-4 auto-rows-min"
+            style={{
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8 }}
+          >
+            {/* 系统信息卡片 */}
+            <InfoCard
+              title="系统"
+              icon={Settings}
+              items={[
+                { label: "浏览器", value: clientInfo.browser },
+                { label: "操作系统", value: clientInfo.os },
+                { label: "设备类型", value: clientInfo.device },
+                { label: "屏幕分辨率", value: clientInfo.screen },
+                { label: "语言", value: clientInfo.language },
+                { label: "时区", value: clientInfo.timezone },
+              ]}
+            />
+
+            {/* ...other InfoCards... */}
+            <InfoCard
+              title="网络"
+              icon={Wifi}
+              items={[
+                { label: "在线状态", value: clientInfo.online ? "是" : "否" },
+                {
+                  label: "启用 Cookie",
+                  value: clientInfo.cookiesEnabled ? "是" : "否",
+                },
+                {
+                  label: "请勿追踪",
+                  value:
+                    clientInfo.doNotTrack === null
+                      ? "未设置"
+                      : clientInfo.doNotTrack
+                      ? "启用"
+                      : "禁用",
+                },
+                ...(clientInfo.connection
+                  ? [
+                      {
+                        label: "连接类型",
+                        value: clientInfo.connection.effectiveType,
+                      },
+                      {
+                        label: "下行带宽",
+                        value: `${clientInfo.connection.downlink} Mbps`,
+                      },
+                      {
+                        label: "往返时间",
+                        value: `${clientInfo.connection.rtt} ms`,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+            <InfoCard
+              title="性能"
+              icon={Activity}
+              items={[
+                {
+                  label: "内存使用",
+                  value: clientInfo.performance.memory || "不可用",
+                },
+                {
+                  label: "页面加载时间",
+                  value: clientInfo.performance.loadTime,
+                },
+              ]}
+            />
+            {clientInfo.battery && (
+              <InfoCard
+                title="电池"
+                icon={BatteryCharging}
+                items={[
                   {
-                    label: "连接类型",
-                    value: clientInfo.connection.effectiveType,
+                    label: "充电中",
+                    value: clientInfo.battery.charging ? "是" : "否",
                   },
                   {
-                    label: "下行带宽",
-                    value: `${clientInfo.connection.downlink} Mbps`,
+                    label: "电量",
+                    value: `${clientInfo.battery.level.toFixed(2)}%`,
                   },
                   {
-                    label: "往返时间",
-                    value: `${clientInfo.connection.rtt} ms`,
+                    label: "充电时间",
+                    value:
+                      clientInfo.battery.chargingTime === Infinity
+                        ? "不适用"
+                        : `${clientInfo.battery.chargingTime} 秒`,
                   },
-                ]
-              : []),
-          ]}
-        />
-        <InfoCard
-          title="性能"
-          icon={Activity}
-          items={[
-            {
-              label: "内存使用",
-              value: clientInfo.performance.memory || "不可用",
-            },
-            { label: "页面加载时间", value: clientInfo.performance.loadTime },
-          ]}
-        />
-        {clientInfo.battery && (
-          <InfoCard
-            title="电池"
-            icon={BatteryCharging}
-            items={[
-              {
-                label: "充电中",
-                value: clientInfo.battery.charging ? "是" : "否",
-              },
-              {
-                label: "电量",
-                value: `${clientInfo.battery.level.toFixed(2)}%`,
-              },
-              {
-                label: "充电时间",
-                value:
-                  clientInfo.battery.chargingTime === Infinity
-                    ? "不适用"
-                    : `${clientInfo.battery.chargingTime} 秒`,
-              },
-              {
-                label: "放电时间",
-                value:
-                  clientInfo.battery.dischargingTime === Infinity
-                    ? "不适用"
-                    : `${clientInfo.battery.dischargingTime} 秒`,
-              },
-            ]}
-          />
-        )}
-        {clientInfo.geolocation && (
-          <InfoCard
-            title="地理位置"
-            icon={LocateIcon}
-            items={[
-              {
-                label: "纬度",
-                value: clientInfo.geolocation.latitude.toFixed(6),
-              },
-              {
-                label: "经度",
-                value: clientInfo.geolocation.longitude.toFixed(6),
-              },
-            ]}
-          />
-        )}
-        <InfoCard
-          title="图形"
-          icon={Server}
-          items={[
-            { label: "WebGL 渲染器", value: clientInfo.webGL.renderer },
-            { label: "WebGL 厂商", value: clientInfo.webGL.vendor },
-          ]}
-        />
-        <InfoCard
-          title="存储"
-          icon={HardDrive}
-          items={[
-            {
-              label: "本地存储项数",
-              value: clientInfo.storage.localStorageSize,
-            },
-            {
-              label: "会话存储项数",
-              value: clientInfo.storage.sessionStorageSize,
-            },
-          ]}
-        />
-        <InfoCard
-          title="硬件"
-          icon={Cpu}
-          items={[
-            { label: "CPU 核心数", value: clientInfo.cpu.cores },
-            {
-              label: "音频输入设备",
-              value: clientInfo.mediaDevices.audioinput,
-            },
-            {
-              label: "音频输出设备",
-              value: clientInfo.mediaDevices.audiooutput,
-            },
-          ]}
-        />
-        {clientInfo.fonts && (
-          <InfoCard
-            title="字体"
-            icon={Palette}
-            items={[
-              { label: "已安装字体数", value: clientInfo.fonts.length },
-              ...clientInfo.fonts.map((font, index) => ({
-                label: `字体 ${index + 1}`,
-                value: font,
-              })),
-            ]}
-          />
-        )}
-      </motion.div>
+                  {
+                    label: "放电时间",
+                    value:
+                      clientInfo.battery.dischargingTime === Infinity
+                        ? "不适用"
+                        : `${clientInfo.battery.dischargingTime} 秒`,
+                  },
+                ]}
+              />
+            )}
+            {clientInfo.geolocation && (
+              <InfoCard
+                title="地理位置"
+                icon={LocateIcon}
+                items={[
+                  {
+                    label: "纬度",
+                    value: clientInfo.geolocation.latitude.toFixed(6),
+                  },
+                  {
+                    label: "经度",
+                    value: clientInfo.geolocation.longitude.toFixed(6),
+                  },
+                ]}
+              />
+            )}
+            <InfoCard
+              title="图形"
+              icon={Server}
+              items={[
+                { label: "WebGL 渲染器", value: clientInfo.webGL.renderer },
+                { label: "WebGL 厂商", value: clientInfo.webGL.vendor },
+              ]}
+            />
+            <InfoCard
+              title="存储"
+              icon={HardDrive}
+              items={[
+                {
+                  label: "本地存储项数",
+                  value: clientInfo.storage.localStorageSize,
+                },
+                {
+                  label: "会话存储项数",
+                  value: clientInfo.storage.sessionStorageSize,
+                },
+              ]}
+            />
+            <InfoCard
+              title="硬件"
+              icon={Cpu}
+              items={[
+                { label: "CPU 核心数", value: clientInfo.cpu.cores },
+                {
+                  label: "音频输入设备",
+                  value: clientInfo.mediaDevices.audioinput,
+                },
+                {
+                  label: "音频输出设备",
+                  value: clientInfo.mediaDevices.audiooutput,
+                },
+              ]}
+            />
+            {clientInfo.fonts && (
+              <InfoCard
+                title="字体"
+                icon={Palette}
+                items={[
+                  { label: "已安装字体数", value: clientInfo.fonts.length },
+                  ...clientInfo.fonts.map((font, index) => ({
+                    label: `字体 ${index + 1}`,
+                    value: font,
+                  })),
+                ]}
+              />
+            )}
+          </motion.div>
+        </div>
+      </div>
     </div>
   );
 }
 
+// 优化 InfoCard 组件的样式
 function InfoCard({
   title,
   items,
@@ -436,24 +451,24 @@ function InfoCard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
+      className="h-full"
     >
-      <Card className="overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
+      <Card className="h-full overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
         <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5">
           <CardTitle className="flex items-center gap-2">
-            {Icon && <Icon className="w-4 h-4 text-gray-500" />}
-            <span className="text-base sm:text-lg font-semibold">{title}</span>
+            {Icon && <Icon className="w-4 h-4 text-muted-foreground" />}
+            <span className="text-base font-semibold">{title}</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-3 sm:p-4">
-          <ul className="space-y-2 sm:space-y-3">
+        <CardContent className="p-4">
+          <ul className="space-y-2">
             {items.map((item, index) => (
-              <li key={index} className="flex items-center justify-between">
-                <span className="text-xs sm:text-sm font-medium text-muted-foreground">
-                  {item.label}
-                </span>
-                <span className="text-xs sm:text-sm font-semibold text-right">
-                  {item.value.toString()}
-                </span>
+              <li
+                key={index}
+                className="flex items-center justify-between text-sm"
+              >
+                <span className="text-muted-foreground">{item.label}</span>
+                <span className="font-medium">{item.value.toString()}</span>
               </li>
             ))}
           </ul>

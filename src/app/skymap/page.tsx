@@ -85,9 +85,9 @@ const ImageFraming: React.FC = () => {
   }, [viewState.fovData, setViewState, calculateFovPoints]);
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-black">
-      {/* 主地图容器 */}
-      <div className="absolute inset-0">
+    <div className="relative w-screen h-[100dvh] overflow-hidden bg-black">
+      {/* 主地图容器 - 充分利用空间 */}
+      <div className="absolute inset-0 z-0">
         <AladinLiteView
           ra={viewState.targetRa}
           dec={viewState.targetDec}
@@ -98,7 +98,7 @@ const ImageFraming: React.FC = () => {
         />
       </div>
 
-      {/* 右侧工具栏 - 使用固定宽度和响应式隐藏 */}
+      {/* 右侧工具栏 - 优化定位和滚动 */}
       <motion.div
         initial="expanded"
         animate={viewState.rightPanelCollapsed ? "collapsed" : "expanded"}
@@ -106,11 +106,11 @@ const ImageFraming: React.FC = () => {
           expanded: { opacity: 1, x: 0 },
           collapsed: { opacity: 0, x: "100%" },
         }}
-        className="fixed right-0 top-0 bottom-0 z-40 flex h-full"
+        className="fixed right-0 top-0 bottom-0 z-40"
       >
-        <Card className="w-64 md:w-72 bg-black/50 backdrop-blur-md border-l border-white/10">
-          <CardContent className="p-4 h-full flex flex-col">
-            <ScrollArea className="flex-1">
+        <Card className="h-full w-64 md:w-72 flex flex-col bg-black/50 backdrop-blur-md border-l border-white/10">
+          <CardContent className="flex-1 p-4 min-h-0">
+            <ScrollArea className="h-full">
               <div className="space-y-4">
                 {/* 目标信息区域 */}
                 <div className="space-y-2 text-sm">
@@ -238,7 +238,7 @@ const ImageFraming: React.FC = () => {
               </div>
             </ScrollArea>
           </CardContent>
-          <CardFooter className="flex justify-end p-2 border-t border-white/10">
+          <CardFooter className="flex-none justify-end p-2 border-t border-white/10">
             <Button
               variant="ghost"
               size="sm"
@@ -255,19 +255,15 @@ const ImageFraming: React.FC = () => {
         </Card>
       </motion.div>
 
-      {/* 底部控制栏 - 使用固定高度和响应式布局 */}
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[95%] max-w-4xl z-40">
+      {/* 底部控制栏 - 改进定位和响应式 */}
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[clamp(300px,95%,1024px)] z-40">
         <motion.div
           className="grid grid-cols-1 md:grid-cols-2 gap-2"
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
         >
-          {/* 坐标信息 */}
-          <Alert
-            variant="default"
-            className="bg-black/50 backdrop-blur-md border border-white/10 text-white p-2"
-          >
+          <Alert className="bg-black/50 backdrop-blur-md border border-white/10 text-white p-2">
             <div className="flex justify-between items-center text-xs lg:text-sm">
               <span>中心坐标:</span>
               <span>
@@ -277,7 +273,6 @@ const ImageFraming: React.FC = () => {
             </div>
           </Alert>
 
-          {/* 控制按钮组 */}
           <div className="flex items-center justify-center gap-2 bg-black/50 backdrop-blur-md rounded-lg p-1">
             <Button
               variant="ghost"
@@ -351,9 +346,9 @@ const ImageFraming: React.FC = () => {
         </motion.div>
       </div>
 
-      {/* Logo 动画 */}
+      {/* Logo - 优化位置和动画 */}
       <motion.div
-        className="fixed left-4 top-4 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full z-40 flex items-center justify-center"
+        className="fixed left-4 top-4 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full z-50 flex items-center justify-center"
         animate={{ rotate: 360 }}
         transition={{
           duration: 10,
@@ -367,6 +362,7 @@ const ImageFraming: React.FC = () => {
           height={32}
           alt="logo"
           className="w-6 h-6"
+          priority
         />
       </motion.div>
 

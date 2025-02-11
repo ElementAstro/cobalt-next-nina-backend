@@ -120,11 +120,19 @@ export default function BlueScreen404({
   return (
     <TooltipProvider>
       <div
-        className={`min-h-screen ${config404.backgroundColor} ${config404.textColor} p-4 flex flex-col justify-center items-center transition-opacity duration-500 ease-in-out overflow-hidden relative`}
+        className={`
+          fixed inset-0 
+          ${config404.backgroundColor} 
+          ${config404.textColor} 
+          flex flex-col items-center 
+          justify-center 
+          overflow-hidden
+          p-4 md:p-6
+        `}
         style={{ opacity: showContent ? 1 : 0 }}
       >
-        {/* 星空背景 */}
-        <div className="absolute inset-0 overflow-hidden">
+        {/* 星空背景 - 使用绝对定位避免影响主布局 */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {Array.from({ length: 100 }).map((_, i) => (
             <div
               key={i}
@@ -138,13 +146,14 @@ export default function BlueScreen404({
           ))}
         </div>
 
-        <div className={`w-full max-w-2xl space-y-4 z-10`}>
+        {/* 主要内容容器 - 添加最大宽度和响应式边距 */}
+        <div className="w-full max-w-2xl space-y-4 z-10">
           {/* 错误信息卡片 */}
           <Card className="border-gray-800 bg-gray-900/50 backdrop-blur">
             <CardHeader className="pb-2">
               <div className="flex items-center space-x-3">
                 <Frown className="h-8 w-8 text-red-400" />
-                <CardTitle className="text-2xl font-bold">
+                <CardTitle className="text-xl md:text-2xl font-bold truncate">
                   {isErrorBoundary ? t("fatalAppError") : t("fatalSystemError")}
                 </CardTitle>
               </div>
@@ -177,23 +186,23 @@ export default function BlueScreen404({
             </CardContent>
           </Card>
 
-          {/* 错误详情 */}
+          {/* 错误详情 - 优化滚动区域 */}
           <Collapsible>
-            <CollapsibleTrigger className="text-sm">
-              <div className="flex items-center space-x-2">
+            <CollapsibleTrigger className="text-sm w-full">
+              <div className="flex items-center space-x-2 hover:bg-gray-800/30 p-2 rounded-md transition-colors">
                 <Telescope className="h-4 w-4" />
                 <Label>{t("viewErrorDetails")}</Label>
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <Card className="border-gray-800 bg-gray-900/50 backdrop-blur">
+              <Card className="border-gray-800 bg-gray-900/50 backdrop-blur mt-2">
                 <CardContent className="relative p-4">
                   <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
                   >
-                    <ScrollArea className="h-[240px] w-full rounded-md border border-gray-700 bg-gray-800/50">
+                    <ScrollArea className="h-[min(240px,60vh)] w-full rounded-md border border-gray-700 bg-gray-800/50">
                       <div className="p-4">
                         <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap">
                           {errorDetails}
@@ -220,15 +229,17 @@ export default function BlueScreen404({
             </CollapsibleContent>
           </Collapsible>
 
-          {/* 操作按钮 */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* 操作按钮 - 改进响应式布局 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <Button asChild variant="secondary" className="h-12">
               <Link
                 href="/"
                 className="flex items-center justify-center space-x-2"
               >
                 <Home className="h-4 w-4" />
-                <Label>{t("homeButtonText")}</Label>
+                <Label className="whitespace-nowrap">
+                  {t("homeButtonText")}
+                </Label>
               </Link>
             </Button>
 
@@ -238,21 +249,25 @@ export default function BlueScreen404({
               onClick={() => window.location.reload()}
             >
               <RefreshCcw className="h-4 w-4 mr-2" />
-              <Label>{t("reloadButtonText")}</Label>
+              <Label className="whitespace-nowrap">
+                {t("reloadButtonText")}
+              </Label>
             </Button>
 
             <Button
               variant="secondary"
-              className="h-12 col-span-2"
+              className="h-12 col-span-1 md:col-span-2"
               onClick={handleTakeScreenshot}
               disabled={screenshotStatus !== "idle"}
             >
               <Camera className="h-4 w-4 mr-2" />
-              {screenshotStatus === "success"
-                ? t("screenshotSuccessText")
-                : screenshotStatus === "error"
-                ? t("screenshotErrorText")
-                : t("screenshotText")}
+              <Label className="whitespace-nowrap">
+                {screenshotStatus === "success"
+                  ? t("screenshotSuccessText")
+                  : screenshotStatus === "error"
+                  ? t("screenshotErrorText")
+                  : t("screenshotText")}
+              </Label>
             </Button>
           </div>
         </div>

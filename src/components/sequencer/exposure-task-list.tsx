@@ -29,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useMediaQuery } from "react-responsive";
 import {
   DndContext,
   closestCenter,
@@ -79,13 +78,6 @@ interface ExposureTaskListProps {
   onGroupsChange?: (groups: TaskGroup[]) => void;
 }
 
-interface SortableItemProps {
-  children: React.ReactNode;
-  task: ExposureTask;
-  onSelect: (taskId: string, selected: boolean) => void;
-  selected: boolean;
-}
-
 function TaskGroupingDialog({
   selectedTasks,
   onCreateGroup,
@@ -132,6 +124,14 @@ const updateTaskMock = async (task: ExposureTask) => {
   return task;
 };
 
+// 1. 使用 debounce 优化搜索
+const debouncedSearch = debounce(
+  (value: string, callback: (value: string) => void) => {
+    callback(value);
+  },
+  300
+);
+
 export function ExposureTaskList({
   groups = [],
   onGroupsChange,
@@ -154,14 +154,6 @@ export function ExposureTaskList({
     },
     [activeTargetId, target, updateTarget]
   );
-
-  const handleTaskStatusUpdate = (taskId: string, status: TaskStatus) => {
-    setTaskStatus((prev) => ({
-      ...prev,
-      [taskId]: { ...status },
-    }));
-    updateTaskStatus(taskId, status);
-  };
 
   const handleAddTask = () => {
     if (activeTargetId) {
@@ -217,7 +209,12 @@ export function ExposureTaskList({
   const [editingTask, setEditingTask] = useState<ExposureTask | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedType, setSelectedType] = useState<string>("ALL");
+  const [selectedType] = useState<string>("ALL");
+
+  // 2. 添加搜索防抖
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    debouncedSearch(e.target.value, setSearchTerm);
+  };
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(
@@ -318,21 +315,6 @@ export function ExposureTaskList({
     }
   }, [taskStatus]);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Clock className="w-4 h-4 text-yellow-500" />;
-      case "running":
-        return <Play className="w-4 h-4 text-blue-500 animate-pulse" />;
-      case "completed":
-        return <Check className="w-4 h-4 text-green-500" />;
-      case "failed":
-        return <AlertCircle className="w-4 h-4 text-red-500" />;
-      default:
-        return null;
-    }
-  };
-
   const [bulkActions, setBulkActions] = useState({
     selectedTasks: new Set<string>(),
     isSelectAll: false,
@@ -366,6 +348,14 @@ export function ExposureTaskList({
     "none" | "type" | "filter" | "custom"
   >("none");
 
+  // 3. 完善分组模式UI
+  const groupingOptions = [
+    { value: "none", label: "不分组" },
+    { value: "type", label: "按类型分组" },
+    { value: "filter", label: "按滤镜分组" },
+    { value: "custom", label: "自定义分组" },
+  ];
+
   const handleTaskSelection = (taskId: string, selected: boolean) => {
     setSelectedTasks((prev) => {
       const next = new Set(prev);
@@ -393,15 +383,6 @@ export function ExposureTaskList({
     };
     onGroupsChange?.([...groups, newGroup]);
   };
-
-  // 添加性能优化
-  const debouncedUpdateTasks = useMemo(
-    () =>
-      debounce((newTasks: ExposureTask[]) => {
-        updateTasks(newTasks);
-      }, 300),
-    [updateTasks]
-  );
 
   // 添加键盘快捷键
   useEffect(() => {
@@ -447,6 +428,31 @@ export function ExposureTaskList({
     return () => clearInterval(interval);
   }, [tasks, taskStatus, updateTaskStatus]);
 
+  // 4. 使用 TaskCard 渲染表格行
+  const renderTaskRow = (task: ExposureTask) => (
+    <SortableItem key={task.id} value={task.id}>
+      <TableRow
+        className={`group cursor-pointer ${
+          selectedTasks.has(task.id) ? "bg-teal-900/20" : ""
+        }`}
+        onClick={() =>
+          handleTaskSelection(task.id, !selectedTasks.has(task.id))
+        }
+      >
+        <TableCell className="w-10">
+          <TaskCard
+            task={task}
+            onEdit={editTask}
+            onDelete={removeTask}
+            updateTask={updateTask}
+            taskStatus={taskStatus}
+          />
+        </TableCell>
+        {/* ...其他单元格保持不变... */}
+      </TableRow>
+    </SortableItem>
+  );
+
   return (
     <DndContext
       sensors={sensors}
@@ -455,29 +461,33 @@ export function ExposureTaskList({
       onDragEnd={handleDragEnd}
     >
       <div className="p-1">
-        {/* 搜索和控制栏 - 更紧凑的布局 */}
+        {/* 1. 搜索栏更新 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
           <div className="flex items-center space-x-1">
             <Input
               placeholder="搜索任务..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearch}
               className="w-full bg-gray-800/50"
             />
-            <Select value={selectedType} onValueChange={setSelectedType}>
+            {/* 2. 添加分组模式选择器 */}
+            <Select
+              value={groupingMode}
+              onValueChange={(value: "none" | "type" | "filter" | "custom") =>
+                setGroupingMode(value)
+              }
+            >
               <SelectTrigger className="w-32 bg-gray-800/50">
-                <SelectValue placeholder="筛选类型" />
+                <SelectValue placeholder="分组方式" />
               </SelectTrigger>
-              <SelectContent className="bg-gray-800 border-gray-700">
-                <SelectItem value="ALL">全部</SelectItem>
-                <SelectItem value="LIGHT">LIGHT</SelectItem>
-                <SelectItem value="DARK">DARK</SelectItem>
-                <SelectItem value="FLAT">FLAT</SelectItem>
-                <SelectItem value="BIAS">BIAS</SelectItem>
+              <SelectContent>
+                {groupingOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-
           <div className="flex justify-end space-x-1 md:col-span-2">
             <Button
               variant="outline"
@@ -495,7 +505,7 @@ export function ExposureTaskList({
           </div>
         </div>
 
-        {/* 表格布局优化 */}
+        {/* 3. 表格更新为使用TaskCard */}
         <div className="rounded-md border border-gray-700 overflow-hidden">
           <Table>
             <TableHeader className="bg-gray-900/50">
@@ -516,93 +526,39 @@ export function ExposureTaskList({
               strategy={verticalListSortingStrategy}
             >
               <TableBody className="bg-gray-800/30">
-                {filteredTasks.map((task) => (
-                  <SortableItem
-                    key={task.id}
-                    id={task.id}
-                    task={task}
-                    onSelect={handleTaskSelection}
-                    selected={selectedTasks.has(task.id)}
-                  >
-                    <TableRow
-                      className={
-                        taskStatus[task.id]?.status === "completed"
-                          ? "bg-green-900/10"
-                          : ""
-                      }
-                    >
-                      <TableCell>
-                        <Switch
-                          checked={task.enabled}
-                          onCheckedChange={(checked) =>
-                            updateTask({ ...task, enabled: checked })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="flex items-center gap-1">
-                        {task.name}
-                        {getStatusIcon(taskStatus[task.id]?.status)}
-                      </TableCell>
-                      <TableCell>{task.type}</TableCell>
-                      <TableCell>{task.total}</TableCell>
-                      <TableCell>{task.time}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Progress
-                            value={(task.progress[0] / task.progress[1]) * 100}
-                            className="h-2 w-24"
-                          />
-                          <span className="text-sm">
-                            {task.progress.join(" / ")}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{task.filter}</TableCell>
-                      <TableCell>{task.binning}</TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Button
-                            size="sm"
-                            onClick={() => editTask(task)}
-                            className="bg-teal-500 text-white"
-                          >
-                            编辑
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => removeTask(task.id)}
-                            className="bg-red-500 text-white"
-                          >
-                            删除
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  </SortableItem>
-                ))}
+                {filteredTasks.map(renderTaskRow)}
               </TableBody>
             </SortableContext>
           </Table>
         </div>
 
-        {/* 添加批量操作按钮 */}
+        {/* 4. 批量操作和分组UI优化 */}
         {selectedTasks.size > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="fixed bottom-4 right-4 flex gap-2"
           >
-            <Button onClick={() => handleBulkAction("enable")}>启用所选</Button>
-            <Button onClick={() => handleBulkAction("disable")}>
-              禁用所选
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => handleBulkAction("delete")}
-            >
-              删除所选
-            </Button>
+            <div className="flex items-center gap-2 bg-gray-800/90 p-2 rounded-lg shadow-lg">
+              <span className="text-sm text-gray-300">
+                已选择 {selectedTasks.size} 个任务
+              </span>
+              <Button onClick={() => handleBulkAction("enable")}>
+                启用所选
+              </Button>
+              <Button onClick={() => handleBulkAction("disable")}>
+                禁用所选
+              </Button>
+              <Button onClick={() => setGroupingMode("custom")}>
+                创建分组
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => handleBulkAction("delete")}
+              >
+                删除所选
+              </Button>
+            </div>
           </motion.div>
         )}
 

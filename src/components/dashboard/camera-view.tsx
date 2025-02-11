@@ -53,6 +53,8 @@ export default function CameraViewfinder() {
   const [showGrid, setShowGrid] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isLightBoxOpen, setIsLightBoxOpen] = useState(false);
+  const [currentImage, setCurrentImage] = useState<string | null>(null);
+  const [streamActive, setStreamActive] = useState(false);
 
   const handleZoomIn = useCallback(
     () => setZoom(Math.min(zoom + 0.1, 3)),
@@ -218,6 +220,29 @@ export default function CameraViewfinder() {
     };
   }, [showSettings]);
 
+  useEffect(() => {
+    // 模拟从相机获取预览流
+    const startPreviewStream = async () => {
+      try {
+        setStreamActive(true);
+        // 这里可以添加实际的相机流连接逻辑
+        setCurrentImage("/camera-preview-placeholder.jpg");
+      } catch {
+        toast({
+          variant: "destructive",
+          title: "错误",
+          description: "无法启动相机预览",
+        });
+      }
+    };
+
+    startPreviewStream();
+    return () => {
+      setStreamActive(false);
+      // 清理相机流连接
+    };
+  }, []);
+
   const openLightBox = () => {
     setIsLightBoxOpen(true);
   };
@@ -238,6 +263,17 @@ export default function CameraViewfinder() {
           filter: `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`,
         }}
       >
+        {/* 预览图像或实时流 */}
+        {streamActive && currentImage && (
+          <div className="absolute inset-0">
+            <img
+              src={currentImage}
+              alt="Camera Preview"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
+
         {/* Grid Overlay */}
         {showGrid && (
           <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 border border-white/20">

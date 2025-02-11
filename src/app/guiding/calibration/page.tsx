@@ -60,16 +60,17 @@ export default function CalibrationPage() {
   }, [toast]);
 
   return (
-    <div className={`min-h-screen ${isDark ? "dark" : ""}`}>
-      <div className="dark:bg-gray-900 min-h-screen">
-        <header className="fixed top-0 left-0 right-0 z-50 bg-white/10 backdrop-blur-md dark:bg-gray-900/50 border-b dark:border-gray-800">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="h-16 flex items-center justify-between">
+    <div className={`h-[100dvh] overflow-hidden ${isDark ? "dark" : ""}`}>
+      <div className="dark:bg-gray-900 h-full flex flex-col">
+        {/* 固定高度的 header */}
+        <header className="flex-none h-16 bg-white/10 backdrop-blur-md dark:bg-gray-900/50 border-b dark:border-gray-800">
+          <div className="h-full mx-auto px-4">
+            <div className="h-full flex items-center justify-between">
               <div className="flex items-center gap-6">
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" className="h-9 w-9">
                         <Home className="w-5 h-5" />
                       </Button>
                     </TooltipTrigger>
@@ -89,6 +90,7 @@ export default function CalibrationPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        className="h-9 w-9"
                         onClick={() => setIsDark(!isDark)}
                       >
                         {isDark ? (
@@ -130,14 +132,18 @@ export default function CalibrationPage() {
           </div>
         </header>
 
-        <main className="pt-20 pb-8 px-4">
+        {/* 动态高度的 main 区域 */}
+        <main className="flex-1 overflow-hidden p-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
+            className="h-full"
           >
-            <Card className="max-w-7xl mx-auto dark:bg-gray-800/50 dark:border-gray-700">
-              <GuidingCalibration />
+            <Card className="h-full max-w-[1920px] mx-auto dark:bg-gray-800/50 dark:border-gray-700 overflow-hidden">
+              <div className="h-full overflow-auto">
+                <GuidingCalibration />
+              </div>
             </Card>
           </motion.div>
         </main>

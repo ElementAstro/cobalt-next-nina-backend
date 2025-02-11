@@ -127,33 +127,37 @@ export default function TelescopeGuiding() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="flex flex-col h-screen"
+      className="h-[100dvh] flex flex-col overflow-hidden"
       style={{ backgroundColor: colors.background, color: colors.text }}
     >
-      <div className="flex-1 overflow-hidden">
-        <div className="flex flex-col md:flex-row md:space-x-4 h-full">
-          {/* 主图像区域 */}
-          <div className="flex-1 relative flex flex-col">
-            <div className="flex-1 relative min-h-0">
+      <div className="flex-1 relative p-2 md:p-4">
+        <div className="flex flex-col md:flex-row gap-2 md:gap-4 h-full">
+          {/* 左侧主图像和图表区域 */}
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            {/* 主图像容器 */}
+            <div className="relative flex-[3] min-h-0 bg-black/20 rounded-lg overflow-hidden">
               {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                   <div className="loader"></div>
                 </div>
               )}
-              {/* 上传图像按钮 */}
+
               <Button
                 className="absolute top-2 right-2 z-20"
                 variant="outline"
+                size="sm"
                 onClick={() => uploadInputRef.current?.click()}
               >
                 上传图像
               </Button>
+
               <input
                 type="file"
                 ref={uploadInputRef}
-                style={{ display: "none" }}
+                className="hidden"
                 onChange={handleImageUpload}
               />
+
               <GuideImage
                 imageUrl={guideImage}
                 colors={colors}
@@ -163,37 +167,44 @@ export default function TelescopeGuiding() {
                 shapes={[
                   {
                     type: "circle",
-                    position: {
-                      x: currentPosition.x,
-                      y: currentPosition.y,
-                    },
+                    position: { x: currentPosition.x, y: currentPosition.y },
                     radius: 5,
                     color: colors.accent,
                   },
                 ]}
               />
             </div>
-            <div className="h-[40vh]">
+
+            {/* 历史图表容器 */}
+            <div className="flex-[2] min-h-0 bg-black/20 rounded-lg overflow-hidden">
               <HistoryGraph />
             </div>
           </div>
-          {/* 辅助信息与设置 */}
-          <div className="w-full md:w-1/3 flex flex-col space-y-4 p-4">
-            <TargetDiagram
-              radius={settings.radius || 50}
-              currentPosition={currentPosition}
-              colors={colors}
-              animationSpeed={settings.animationSpeed || 1}
-              showStats={true}
-              enableExport={true}
-              canvasSize={{ width: 100, height: 100 }}
-              showInfo={true}
-              crosshairColor={colors.secondary}
-              circleCount={3}
-              pointSize={4}
-            />
-            <Card>
-              <CardContent className="text-xs space-y-1.5 font-mono items-center p-2">
+
+          {/* 右侧控制面板 */}
+          <div className="w-full md:w-80 flex flex-col gap-2">
+            {/* 目标图 */}
+            <Card className="flex-none">
+              <CardContent className="p-2">
+                <TargetDiagram
+                  radius={settings.radius || 50}
+                  currentPosition={currentPosition}
+                  colors={colors}
+                  animationSpeed={settings.animationSpeed || 1}
+                  showStats={true}
+                  enableExport={true}
+                  canvasSize={{ width: 100, height: 100 }}
+                  showInfo={true}
+                  crosshairColor={colors.secondary}
+                  circleCount={3}
+                  pointSize={4}
+                />
+              </CardContent>
+            </Card>
+
+            {/* 状态卡片 */}
+            <Card className="flex-none">
+              <CardContent className="p-3 space-y-2">
                 <div className="flex justify-between">
                   <span>Mid row FWHM:</span>
                   <span>{stats.fwhm}&quot;</span>
@@ -216,8 +227,10 @@ export default function TelescopeGuiding() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="text-xs space-y-1.5 font-mono items-center p-2">
+
+            {/* 跟踪信息卡片 */}
+            <Card className="flex-none">
+              <CardContent className="p-3 space-y-2">
                 <div className="flex justify-between">
                   <span>跟踪状态:</span>
                   <span
@@ -242,12 +255,15 @@ export default function TelescopeGuiding() {
                 </div>
               </CardContent>
             </Card>
-            {/* 设置面板放在Sheet中 */}
+
+            {/* 设置按钮和面板 */}
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="outline">设置</Button>
+                <Button variant="outline" className="w-full">
+                  设置
+                </Button>
               </SheetTrigger>
-              <SheetContent side="right" className="w-full max-w-md">
+              <SheetContent side="right" className="w-[400px]">
                 <SheetHeader>
                   <SheetTitle>引导设置</SheetTitle>
                   <SheetDescription>调整系统参数</SheetDescription>
