@@ -53,13 +53,6 @@ import { useUIStore } from "@/stores/connection/uiStore";
 import { useConnectionStatusStore } from "@/stores/connection/statusStore";
 import { usePortScanStore } from "@/stores/connection/portScanStore";
 
-// 定义配置类型
-interface ConfigData {
-  connectionTimeout: number;
-  maxRetries: number;
-  debugMode: boolean;
-}
-
 interface ConnectionError {
   code: string;
   message: string;
@@ -70,12 +63,41 @@ const configSchema = z.object({
   connectionTimeout: z.number().min(1).max(300),
   maxRetries: z.number().min(1).max(10),
   debugMode: z.boolean(),
+  // 添加可选的连接配置验证
+  connection: z
+    .object({
+      ip: z.string().min(1).optional(),
+      port: z.number().min(1).max(65535).optional(),
+      username: z.string().min(1).optional(),
+      password: z.string().min(1).optional(),
+      isSSL: z.boolean().optional(),
+      rememberLogin: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 interface ConfigurationManagerProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (config: ConfigData) => void;
+  onImport: (
+    config: Partial<{
+      ip: string;
+      port: number;
+      username: string;
+      password: string;
+      isSSL: boolean;
+      rememberLogin: boolean;
+      connectionType: "direct" | "proxy";
+      proxySettings?: {
+        host: string;
+        port: number;
+        auth?: {
+          username: string;
+          password: string;
+        };
+      };
+    }>
+  ) => void;
 }
 
 export function ConfigurationManager({
@@ -137,14 +159,27 @@ export function ConfigurationManager({
       const fileContent = await readFileAsText(file);
       const config = JSON.parse(fileContent);
       const validatedConfig = configSchema.parse(config);
+
+      // 更新高级设置
+      if (validatedConfig.connectionTimeout) {
+        updateSettings({
+          connectionTimeout: validatedConfig.connectionTimeout,
+          maxRetries: validatedConfig.maxRetries,
+          debugMode: validatedConfig.debugMode,
+        });
+      }
+
+      // 如果存在连接配置，则通知父组件
+      if (validatedConfig.connection) {
+        onImport(validatedConfig.connection);
+      }
+
       toast({
         title: "配置导入成功",
         description: "配置文件已成功导入并验证",
         variant: "default",
       });
-      // Update advanced settings in store and notify parent
-      updateSettings(validatedConfig);
-      onImport(validatedConfig);
+
       setImportStatus("success");
       onClose();
     } catch (error) {

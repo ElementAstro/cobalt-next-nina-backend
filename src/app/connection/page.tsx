@@ -79,7 +79,10 @@ export default function ConnectionPage() {
 
   const handleConnect = async (values: FormValues) => {
     try {
+      // 更新表单数据到 store
+      updateFormData(values);
       await connect();
+      // 如果选择记住登录，保存到 cookies
       if (values.rememberLogin) {
         saveToCookies();
       }
@@ -97,108 +100,123 @@ export default function ConnectionPage() {
     }
   };
 
-  const handleConfigImport = (config: ConnectionFormData) => {
+  // 修改配置导入处理函数
+  const handleConfigImport = (config: Partial<typeof formData>) => {
     updateFormData(config);
-    form.reset(config);
+    form.reset({ ...formData, ...config });
   };
 
   // 渲染主内容
   const renderContent = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
-      {/* 连接控制面板 */}
-      <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Plug className="w-5 h-5" />
-            连接控制面板
-            {isConnected && (
-              <Badge variant="default" className="ml-auto">
-                <Wifi className="w-4 h-4 mr-1" />
-                {connectionStrength}%
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleConnect)}
-              className="space-y-4"
-            >
-              <ConnectionDetails
-                form={form}
-                isSSL={formData.isSSL}
-                setIsSSL={(val) => updateFormData({ isSSL: val })}
-              />
-              <LoginForm
-                form={form}
-                showPassword={showPassword}
-                togglePasswordVisibility={() => setShowPassword(!showPassword)}
-              />
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    id="remember"
-                    checked={formData.rememberLogin}
-                    onCheckedChange={(checked) =>
-                      updateFormData({ rememberLogin: checked })
+    <div className="container mx-auto p-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-4xl mx-auto">
+        {/* 连接控制面板 */}
+        <Card className="w-full">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Plug className="w-5 h-5" />
+              连接控制面板
+              {isConnected && (
+                <Badge variant="default" className="ml-auto">
+                  <Wifi className="w-4 h-4 mr-1" />
+                  {connectionStrength}%
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(handleConnect)}
+                className="space-y-4"
+              >
+                <div className="space-y-4">
+                  <ConnectionDetails
+                    form={form}
+                    isSSL={formData.isSSL}
+                    setIsSSL={(val) => updateFormData({ isSSL: val })}
+                  />
+                  <LoginForm
+                    form={form}
+                    showPassword={showPassword}
+                    togglePasswordVisibility={() =>
+                      setShowPassword(!showPassword)
                     }
                   />
-                  <Label htmlFor="remember">记住登录</Label>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowPortScan(true)}
-                >
-                  端口扫描
-                </Button>
-              </div>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Switch
+                      id="remember"
+                      checked={formData.rememberLogin}
+                      onCheckedChange={(checked) =>
+                        updateFormData({ rememberLogin: checked })
+                      }
+                    />
+                    <Label htmlFor="remember">记住登录</Label>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowPortScan(true)}
+                    className="w-full sm:w-auto"
+                  >
+                    端口扫描
+                  </Button>
+                </div>
+                <div className="pt-2">
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isConnected || isLoading}
+                  >
+                    {isLoading ? "连接中..." : "连接"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+            {isConnected && (
               <Button
-                type="submit"
-                className="w-full"
-                disabled={isConnected || isLoading}
+                variant="destructive"
+                onClick={disconnect}
+                className="mt-4 w-full"
               >
-                {isLoading ? "连接中..." : "连接"}
+                断开连接
               </Button>
-            </form>
-          </Form>
-          {isConnected && (
-            <Button
-              variant="destructive"
-              onClick={disconnect}
-              className="mt-4 w-full"
-            >
-              断开连接
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
 
-      {/* 配置管理面板 */}
-      <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="w-5 h-5" />
-            配置管理
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex justify-between">
-            <Button
-              variant="outline"
-              onClick={() => setShowConfigManager(true)}
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              配置管理器
-            </Button>
-            <Button variant="outline" onClick={() => setShowHistory(true)}>
-              <Database className="w-4 h-4 mr-2" />
-              连接历史
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        {/* 配置管理面板 */}
+        <Card className="w-full">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Settings className="w-5 h-5" />
+              配置管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Button
+                variant="outline"
+                onClick={() => setShowConfigManager(true)}
+                className="w-full"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                配置管理器
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowHistory(true)}
+                className="w-full"
+              >
+                <Database className="w-4 h-4 mr-2" />
+                连接历史
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 
@@ -206,26 +224,32 @@ export default function ConnectionPage() {
     <div className="min-h-screen bg-background">
       <NetworkStatus status={{ online: navigator.onLine }} />
       {isMobile ? (
-        <div className="flex flex-col">
-          <div className="flex border-b">
+        <div className="flex flex-col h-full">
+          <div className="flex border-b bg-card">
             <button
-              className={`flex-1 p-4 ${
-                activeTab === "connect" ? "border-b-2 border-primary" : ""
+              className={`flex-1 p-4 text-sm font-medium transition-colors ${
+                activeTab === "connect"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground"
               }`}
               onClick={() => setActiveTab("connect")}
             >
               连接
             </button>
             <button
-              className={`flex-1 p-4 ${
-                activeTab === "config" ? "border-b-2 border-primary" : ""
+              className={`flex-1 p-4 text-sm font-medium transition-colors ${
+                activeTab === "config"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground"
               }`}
               onClick={() => setActiveTab("config")}
             >
               配置
             </button>
           </div>
-          {activeTab === "connect" ? renderContent() : null}
+          <div className="flex-1 overflow-auto">
+            {activeTab === "connect" ? renderContent() : null}
+          </div>
         </div>
       ) : (
         renderContent()
