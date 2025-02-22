@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Search,
-  Clock,
   Settings,
   RefreshCw,
-  Filter,
-  Sliders,
-  Plus,
+  Clock,
+  History,
+  X,
+  ArrowRight,
+  Star,
 } from "lucide-react";
-import Fuse from "fuse.js";
 import { motion, AnimatePresence } from "framer-motion";
 import { debounce } from "lodash";
 import {
@@ -22,340 +22,324 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import useSearchStore from "@/stores/skymap/searchStore";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
   TooltipProvider,
 } from "@/components/ui/tooltip";
-import { CelestialObject, SearchFilters } from "@/types/skymap/search";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import useSearchStore from "@/stores/skymap/searchStore";
+import { CelestialObject } from "@/types/skymap/search";
 
 interface SearchBarProps {
-  onSearch: (term: string, filters?: SearchFilters) => void;
+  onSearch: (term: string) => void;
   items: CelestialObject[];
 }
 
+const containerVariants = {
+  hidden: { opacity: 0, y: -10 },
+  visible: { opacity: 1, y: 0 },
+};
+
+const overlayVariants = {
+  hidden: { opacity: 0, scale: 0.95 },
+  visible: { opacity: 1, scale: 1 },
+};
+
 export function SearchBar({ onSearch, items }: SearchBarProps) {
   const {
-    setObjects,
-    filters,
     searchTerm,
-    showAdvanced,
-    showSuggestions,
-    suggestions,
-    searchHistory,
-    isLoading,
     setSearchTerm,
+    showAdvanced,
     setShowAdvanced,
-    setShowSuggestions,
-    setSuggestions,
-    setFilters,
+    searchHistory,
     addToHistory,
     clearHistory,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
   } = useSearchStore();
 
-  const fuseRef = useRef<Fuse<CelestialObject> | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [suggestions, setSuggestions] = useState<CelestialObject[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const debouncedSearch = useRef(
-    debounce((value: string, currentFilters: SearchFilters) => {
-      if (value && fuseRef.current) {
-        let results = fuseRef.current
-          .search(value)
-          .map((result) => result.item);
-
-        if (currentFilters.constellations.length > 0) {
-          results = results.filter((item) =>
-            currentFilters.constellations.includes(item.constellation)
-          );
-        }
-
-        if (currentFilters.types.length > 0) {
-          results = results.filter((item) =>
-            currentFilters.types.includes(item.type)
-          );
-        }
-
-        if (currentFilters.minMagnitude !== undefined) {
-          results = results.filter(
-            (item) => item.magnitude >= currentFilters.minMagnitude
-          );
-        }
-
-        if (currentFilters.maxMagnitude !== undefined) {
-          results = results.filter(
-            (item) => item.magnitude <= currentFilters.maxMagnitude
-          );
-        }
-
-        setSuggestions(results.slice(0, 5));
-      } else {
+    debounce(async (term: string) => {
+      if (!term.trim()) {
         setSuggestions([]);
+        return;
       }
-      onSearch(value, filters);
+
+      setIsSearching(true);
+      try {
+        // 模拟搜索延迟
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const results = items
+          .filter(
+            (item) =>
+              item.name.toLowerCase().includes(term.toLowerCase()) ||
+              item.constellation.toLowerCase().includes(term.toLowerCase()) ||
+              item.type.toLowerCase().includes(term.toLowerCase())
+          )
+          .slice(0, 5);
+        setSuggestions(results);
+      } finally {
+        setIsSearching(false);
+      }
     }, 300)
   ).current;
 
   useEffect(() => {
-    fuseRef.current = new Fuse(items, {
-      keys: ["name", "constellation", "type", "magnitude"],
-      threshold: 0.3,
-    });
-    setObjects(items);
-  }, [items, setObjects]);
+    debouncedSearch(searchTerm);
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [searchTerm, debouncedSearch]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(event.target as Node) &&
+        !inputRef.current?.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false);
+        setShowHistory(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-    debouncedSearch(e.target.value, filters);
+    const value = e.target.value;
+    setSearchTerm(value);
     setShowSuggestions(true);
+    setShowHistory(false);
   };
 
-  const handleSearchSubmit = (value: string) => {
-    if (!value.trim()) return;
-    addToHistory(value);
-    onSearch(value, filters);
+  const handleSearchSubmit = (term: string) => {
+    if (!term.trim()) return;
+    addToHistory(term);
+    onSearch(term);
     setShowSuggestions(false);
+    setShowHistory(false);
   };
 
-  const handleBlur = () => {
-    setTimeout(() => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
       setShowSuggestions(false);
-    }, 100);
-  };
-
-  const handleAdvancedFilterChange = (
-    filterName: keyof SearchFilters,
-    value: string
-  ) => {
-    const newFilters: SearchFilters = { ...filters };
-
-    switch (filterName) {
-      case "constellations":
-        newFilters.constellations = [value];
-        break;
-      case "types":
-        newFilters.types = [value];
-        break;
-      case "minMagnitude":
-        newFilters.minMagnitude = Number(value);
-        break;
-      case "maxMagnitude":
-        newFilters.maxMagnitude = Number(value);
-        break;
-      default:
-        break;
+      setShowHistory(false);
+    } else if (e.key === "Enter" && searchTerm) {
+      handleSearchSubmit(searchTerm);
     }
-
-    setFilters(newFilters);
-    debouncedSearch(searchTerm, newFilters);
-  };
-
-  const handleAddFilter = () => {
-    // 示例功能：添加更多自定义过滤器
-    console.log("Add filter clicked");
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="relative w-full max-w-full mx-auto"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="relative w-full max-w-2xl mx-auto"
     >
-      <div className="flex items-center gap-1.5">
-        <div className="relative flex-1">
-          <Clock className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
-          <Input
-            ref={inputRef}
-            type="text"
-            placeholder="搜索天体..."
-            value={searchTerm}
-            onChange={handleSearchChange}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={handleBlur}
-            className="w-full pl-8 h-9 bg-background/50 backdrop-blur-sm border-muted"
-          />
-          {isLoading && (
-            <RefreshCw className="absolute right-3 top-2.5 h-4 w-4 animate-spin opacity-70" />
-          )}
-        </div>
+      <Card className="bg-background/60 backdrop-blur-sm border-border/50">
+        <div className="p-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <Input
+                ref={inputRef}
+                type="text"
+                placeholder="搜索天体..."
+                value={searchTerm}
+                onChange={handleSearchChange}
+                onKeyDown={handleKeyDown}
+                onFocus={() => setShowHistory(true)}
+                className="pl-8 pr-10 bg-background/50"
+              />
+              {searchTerm && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute inset-y-0 right-0 h-full px-2 hover:bg-transparent"
+                  onClick={() => {
+                    setSearchTerm("");
+                    inputRef.current?.focus();
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
 
-        <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-9 w-9"
-            onClick={() => handleSearchSubmit(searchTerm)}
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            className="h-9 w-9"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
+            <TooltipProvider>
+              <div className="flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={() => handleSearchSubmit(searchTerm)}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>搜索</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={() => setShowAdvanced(!showAdvanced)}
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>高级选项</TooltipContent>
+                </Tooltip>
+
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="w-[100px]">
+                    <SelectValue placeholder="排序" />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="name">名称</SelectItem>
+                    <SelectItem value="magnitude">星等</SelectItem>
+                    <SelectItem value="distance">距离</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                    >
+                      {sortOrder === "asc" ? "↑" : "↓"}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>排序方向</TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+          </div>
         </div>
-      </div>
+      </Card>
 
       <AnimatePresence>
-        {showSuggestions && (
+        {(showSuggestions || showHistory) && (searchTerm || showHistory) && (
           <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.2 }}
-            className="absolute z-50 w-full mt-1 overflow-hidden rounded-md border bg-background/95 backdrop-blur-sm shadow-lg"
+            ref={suggestionsRef}
+            variants={overlayVariants}
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
+            className="absolute z-50 w-full mt-1"
           >
-            {/* 显示建议内容 */}
-            {suggestions.map((item, index) => (
-              <div
-                key={index}
-                onClick={() => handleSearchSubmit(item.name)}
-                className="p-1 hover:bg-muted cursor-pointer"
-              >
-                {item.name} - {item.constellation} - {item.type}
-              </div>
-            ))}
+            <Card className="bg-background/95 backdrop-blur-md border-border/50">
+              <Command>
+                <CommandList>
+                  {showHistory && searchHistory.length > 0 && (
+                    <CommandGroup
+                      heading={
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <History className="h-4 w-4" />
+                            <span>搜索历史</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              clearHistory();
+                              setShowHistory(false);
+                            }}
+                          >
+                            清空
+                          </Button>
+                        </div>
+                      }
+                    >
+                      {searchHistory.map((term, index) => (
+                        <CommandItem
+                          key={index}
+                          onSelect={() => {
+                            setSearchTerm(term);
+                            handleSearchSubmit(term);
+                          }}
+                        >
+                          <Clock className="mr-2 h-4 w-4" />
+                          <span>{term}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+
+                  {showSuggestions && suggestions.length > 0 && (
+                    <CommandGroup heading="搜索建议">
+                      {suggestions.map((item) => (
+                        <CommandItem
+                          key={item.id}
+                          onSelect={() => {
+                            setSearchTerm(item.name);
+                            handleSearchSubmit(item.name);
+                          }}
+                        >
+                          <Star className="mr-2 h-4 w-4" />
+                          <div className="flex items-center gap-2">
+                            <span>{item.name}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {item.type}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">
+                              {item.constellation}
+                            </Badge>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+
+                  {showSuggestions && !isSearching && suggestions.length === 0 && (
+                    <CommandEmpty>未找到相关天体</CommandEmpty>
+                  )}
+
+                  {isSearching && (
+                    <div className="p-4 text-center">
+                      <RefreshCw className="h-5 w-5 animate-spin mx-auto" />
+                    </div>
+                  )}
+                </CommandList>
+              </Command>
+            </Card>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {searchHistory.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 overflow-hidden rounded-md border bg-background/95 backdrop-blur-sm shadow-lg">
-          <div className="p-2">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-sm font-medium">搜索历史</span>
-              <Button variant="ghost" size="sm" onClick={clearHistory}>
-                清空
-              </Button>
-            </div>
-            {searchHistory.map((item, idx) => (
-              <div
-                key={idx}
-                onClick={() => handleSearchSubmit(item)}
-                className="p-1 hover:bg-muted cursor-pointer"
-              >
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {showAdvanced && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="mt-2 p-2 border rounded bg-background/50"
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Filter className="h-4 w-4 text-gray-500" />
-            <span className="text-sm font-medium">高级筛选</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <span className="text-xs">星座:</span>
-                    <Select
-                      value={
-                        filters.constellations.length > 0
-                          ? filters.constellations[0]
-                          : ""
-                      }
-                      onValueChange={(val) =>
-                        handleAdvancedFilterChange("constellations", val)
-                      }
-                    >
-                      <SelectTrigger className="w-32 text-xs">
-                        <SelectValue placeholder="选择星座" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UMA">UMA</SelectItem>
-                        <SelectItem value="CYG">CYG</SelectItem>
-                        <SelectItem value="PYX">PYX</SelectItem>
-                        <SelectItem value="ORI">ORI</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>选择特定星座</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <span className="text-xs">对象类型:</span>
-                    <Select
-                      value={filters.types.length > 0 ? filters.types[0] : ""}
-                      onValueChange={(val) =>
-                        handleAdvancedFilterChange("types", val)
-                      }
-                    >
-                      <SelectTrigger className="w-32 text-xs">
-                        <SelectValue placeholder="选择类型" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="STAR">STAR</SelectItem>
-                        <SelectItem value="GALXY">GALXY</SelectItem>
-                        <SelectItem value="COMET">COMET</SelectItem>
-                        <SelectItem value="NOVA">NOVA</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>选择天体类型</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs">星等:</span>
-            <Input
-              type="number"
-              placeholder="最小"
-              value={filters.minMagnitude?.toString() || ""}
-              onChange={(e) =>
-                handleAdvancedFilterChange("minMagnitude", e.target.value)
-              }
-              className="w-16 text-xs"
-            />
-            <Input
-              type="number"
-              placeholder="最大"
-              value={filters.maxMagnitude?.toString() || ""}
-              onChange={(e) =>
-                handleAdvancedFilterChange("maxMagnitude", e.target.value)
-              }
-              className="w-16 text-xs"
-            />
-            <Sliders className="h-5 w-5 text-gray-500" />
-          </div>
-          <div className="mt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleAddFilter}
-              className="flex items-center gap-1"
-            >
-              <Plus className="h-4 w-4" />
-              添加过滤器
-            </Button>
-          </div>
-        </motion.div>
-      )}
     </motion.div>
   );
 }

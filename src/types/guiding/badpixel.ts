@@ -1,17 +1,26 @@
-export interface PixelData {
+export type VisualMode = "table" | "graph" | "grid";
+
+export interface BadPixelData {
   width: number;
   height: number;
   hotPixels: number[];
   coldPixels: number[];
-  correctionLevels: {
-    hot: number;
-    cold: number;
-  };
+}
+
+export interface HistoryRecord {
+  hotPixels: number[];
+  coldPixels: number[];
+  timestamp: string;
+}
+
+export interface SaveState {
+  loading: boolean;
+  lastSaved?: Date;
+  error?: string;
 }
 
 export interface BadPixelOptions {
   language: "zh" | "en";
-  theme: "light" | "dark";
   autoRefresh: boolean;
   refreshInterval: number;
   displayMode: "scatter" | "heatmap" | "grid";

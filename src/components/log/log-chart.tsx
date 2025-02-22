@@ -2,16 +2,16 @@
 
 import React, { useState, useMemo } from "react";
 import {
-  LineChart,
-  Line,
+  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip as RechartsTooltip,
-  Legend as RechartsLegend,
-  ResponsiveContainer,
+  Tooltip,
+  Legend,
+  LineChart,
+  Line,
   PieChart,
   Pie,
   Cell,
@@ -19,7 +19,8 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  Radar as RechartsRadar,
+  Radar,
+  TooltipProps,
 } from "recharts";
 import {
   Select,
@@ -28,15 +29,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { LogEntry } from "@/types/log";
 import {
   BarChart2,
   PieChart as PieChartIcon,
   LineChart as LineChartIcon,
-  Radar,
+  Radar as RadarIcon,
+  Download,
+  Loader2,
 } from "lucide-react";
-import saveAs from "file-saver";
-import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface LogChartProps {
   logs: LogEntry[];
@@ -45,123 +52,163 @@ interface LogChartProps {
   groupBy?: "level" | "hour" | "day" | "custom";
 }
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
+interface ChartData {
+  name: string;
+  value: number;
+  color: string;
+}
 
-const groupLogsByTime = (
-  logs: LogEntry[],
-  timeRange: "hour" | "day" | "week" | "month"
-) => {
-  const now = new Date();
-  const timeRangeMap = {
-    hour: 60 * 60 * 1000,
-    day: 24 * 60 * 60 * 1000,
-    week: 7 * 24 * 60 * 60 * 1000,
-    month: 30 * 24 * 60 * 60 * 1000,
-  };
+interface CustomTooltipProps extends Omit<TooltipProps<number, string>, 'payload'> {
+  payload?: Array<{
+    payload: ChartData;
+    value: number;
+  }>;
+}
 
-  const timeRangeMs = timeRangeMap[timeRange];
-  const startTime = new Date(now.getTime() - timeRangeMs);
-
-  return logs
-    .filter((log) => new Date(log.timestamp) >= startTime)
-    .reduce((acc: { [key: string]: number }, log) => {
-      const timeKey = new Date(log.timestamp).toLocaleString();
-      acc[timeKey] = (acc[timeKey] || 0) + 1;
-      return acc;
-    }, {});
+const COLORS = {
+  error: "rgb(239, 68, 68)",
+  warn: "rgb(234, 179, 8)",
+  info: "rgb(59, 130, 246)",
+  success: "rgb(34, 197, 94)",
+  default: "rgb(99, 102, 241)",
 };
 
-export const LogChart: React.FC<LogChartProps> = ({
+const CHART_TYPES = [
+  { value: "bar", label: "柱状图", icon: BarChart2 },
+  { value: "line", label: "折线图", icon: LineChartIcon },
+  { value: "pie", label: "饼图", icon: PieChartIcon },
+  { value: "radar", label: "雷达图", icon: RadarIcon },
+] as const;
+
+const LogChart: React.FC<LogChartProps> = ({
   logs,
   chartType: initialChartType = "bar",
   groupBy = "level",
 }) => {
   const [chartType, setChartType] = useState(initialChartType);
-  const [timeRange, setTimeRange] = useState<"hour" | "day" | "week" | "month">(
-    "day"
-  );
+  const [isExporting, setIsExporting] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const processData = useMemo(() => {
-    if (groupBy === "level") {
-      const groupedData = logs.reduce((acc: { [key: string]: number }, log) => {
-        acc[log.level] = (acc[log.level] || 0) + 1;
-        return acc;
-      }, {});
+    const groupedData = logs.reduce((acc: { [key: string]: number }, log) => {
+      const key = groupBy === "level" ? log.level : new Date(log.timestamp).toLocaleString();
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
 
-      return Object.entries(groupedData).map(([name, value]) => ({
-        name,
-        value,
-      }));
-    } else {
-      const timeData = groupLogsByTime(logs, timeRange);
-      return Object.entries(timeData).map(([time, count]) => ({
-        name: time,
-        value: count,
-      }));
+    return Object.entries(groupedData).map(([name, value]) => ({
+      name,
+      value,
+      color: COLORS[name as keyof typeof COLORS] || COLORS.default,
+    }));
+  }, [logs, groupBy]);
+
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      const svg = document.querySelector(".recharts-surface") as SVGElement;
+      if (!svg) throw new Error("Chart element not found");
+
+      const serializer = new XMLSerializer();
+      const source = serializer.serializeToString(svg);
+      const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `log-chart-${new Date().toISOString()}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success("图表已导出");
+    } catch (error) {
+      console.error("Export failed:", error);
+      toast.error("导出失败");
+    } finally {
+      setIsExporting(false);
     }
-  }, [logs, groupBy, timeRange]);
+  };
+
+  const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <Card className="border shadow-lg">
+          <CardContent className="p-3 space-y-1.5">
+            <p className="text-sm font-medium">{label || data.name}</p>
+            <Badge 
+              variant="secondary" 
+              style={{ 
+                backgroundColor: data.color + "20",
+                color: data.color 
+              }}
+            >
+              {payload[0].value} 条日志
+            </Badge>
+          </CardContent>
+        </Card>
+      );
+    }
+    return null;
+  };
 
   const renderBarChart = () => (
-    <BarChart data={processData}>
-      <CartesianGrid strokeDasharray="3 3" />
-      <XAxis dataKey="name" />
-      <YAxis />
-      <RechartsTooltip />
-      <RechartsLegend />
-      <Bar dataKey="value" fill="#8884d8">
+    <BarChart data={processData} className="[&_.recharts-cartesian-grid-horizontal]:opacity-20">
+      <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+      <XAxis 
+        dataKey="name" 
+        tick={{ fill: "currentColor", opacity: 0.5 }} 
+      />
+      <YAxis 
+        tick={{ fill: "currentColor", opacity: 0.5 }}
+        allowDecimals={false}
+      />
+      <Tooltip content={<CustomTooltip />} />
+      <Bar dataKey="value" className="cursor-pointer">
         {processData.map((entry, index) => (
-          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          <Cell
+            key={`cell-${index}`}
+            fill={entry.color}
+            opacity={activeIndex === null || activeIndex === index ? 1 : 0.3}
+            onMouseEnter={() => setActiveIndex(index)}
+            onMouseLeave={() => setActiveIndex(null)}
+          />
         ))}
       </Bar>
     </BarChart>
   );
 
   const renderLineChart = () => (
-    <LineChart
-      data={processData}
-      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-    >
-      <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-      <XAxis
-        dataKey="name"
-        tick={{ fill: "#666", fontSize: 12 }}
-        interval="preserveStartEnd"
+    <LineChart data={processData} className="[&_.recharts-cartesian-grid-horizontal]:opacity-20">
+      <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+      <XAxis 
+        dataKey="name" 
+        tick={{ fill: "currentColor", opacity: 0.5 }} 
       />
-      <YAxis tick={{ fill: "#666", fontSize: 12 }} allowDecimals={false} />
-      <RechartsTooltip
-        contentStyle={{
-          background: "rgba(255, 255, 255, 0.96)",
-          border: "1px solid rgba(0, 0, 0, 0.1)",
-          borderRadius: 8,
-          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-        }}
-        formatter={(value) => [value, "Count"]}
-        labelFormatter={(label) => `Time: ${label}`}
+      <YAxis 
+        tick={{ fill: "currentColor", opacity: 0.5 }}
+        allowDecimals={false}
       />
-      <RechartsLegend
-        wrapperStyle={{ paddingTop: 20 }}
-        formatter={(value) => <span style={{ color: "#666" }}>{value}</span>}
-      />
+      <Tooltip content={<CustomTooltip />} />
       <Line
         type="monotone"
         dataKey="value"
-        stroke="#8884d8"
-        strokeWidth={3}
+        stroke={COLORS.default}
+        strokeWidth={2}
         dot={{
-          stroke: "#8884d8",
+          r: 4,
           strokeWidth: 2,
-          fill: "#fff",
-          r: 5,
+          fill: "var(--background)",
+          stroke: COLORS.default,
         }}
         activeDot={{
-          r: 8,
-          stroke: "#fff",
+          r: 6,
           strokeWidth: 2,
-          fill: "#8884d8",
+          fill: COLORS.default,
+          stroke: "var(--background)",
         }}
-        animationDuration={800}
-        animationEasing="ease-in-out"
-        isAnimationActive={true}
       />
     </LineChart>
   );
@@ -172,204 +219,112 @@ export const LogChart: React.FC<LogChartProps> = ({
         data={processData}
         cx="50%"
         cy="50%"
-        labelLine={false}
-        label={({ name, value }) => `${name}: ${value}`}
+        innerRadius={60}
         outerRadius={80}
-        innerRadius={40}
         paddingAngle={2}
         dataKey="value"
-        animationDuration={800}
-        animationEasing="ease-in-out"
-        isAnimationActive={true}
+        className="cursor-pointer"
       >
-        {processData.map((entry, index) => {
-          const gradientId = `pieGradient${index}`;
-          return (
-            <>
-              <defs key={gradientId}>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor={gradientId[index % gradientId.length]}
-                    stopOpacity={0.8}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor={gradientId[index % gradientId.length]}
-                    stopOpacity={0.8}
-                  />
-                </linearGradient>
-              </defs>
-              <Cell
-                key={`cell-${index}`}
-                fill={`url(#${gradientId})`}
-                stroke="#fff"
-                strokeWidth={2}
-              />
-            </>
-          );
-        })}
+        {processData.map((entry, index) => (
+          <Cell
+            key={`cell-${index}`}
+            fill={entry.color}
+            opacity={activeIndex === null || activeIndex === index ? 1 : 0.3}
+            onMouseEnter={() => setActiveIndex(index)}
+            onMouseLeave={() => setActiveIndex(null)}
+          />
+        ))}
       </Pie>
-      <RechartsTooltip
-        contentStyle={{
-          background: "rgba(255, 255, 255, 0.96)",
-          border: "1px solid rgba(0, 0, 0, 0.1)",
-          borderRadius: 8,
-          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-        }}
-        formatter={(value) => [value, "Count"]}
-        labelFormatter={(label) => `Category: ${label}`}
-      />
-      <RechartsLegend
-        wrapperStyle={{ paddingTop: 20 }}
-        formatter={(value) => <span style={{ color: "#666" }}>{value}</span>}
-      />
+      <Tooltip content={<CustomTooltip />} />
+      <Legend />
     </PieChart>
   );
 
   const renderRadarChart = () => (
-    <RadarChart
-      cx="50%"
-      cy="50%"
-      outerRadius="80%"
-      data={processData}
-      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-    >
-      <PolarGrid strokeOpacity={0.2} />
-      <PolarAngleAxis dataKey="name" tick={{ fill: "#666", fontSize: 12 }} />
-      <PolarRadiusAxis tick={{ fill: "#666", fontSize: 12 }} angle={30} />
-      <RechartsRadar
+    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={processData}>
+      <PolarGrid className="opacity-20" />
+      <PolarAngleAxis dataKey="name" tick={{ fill: "currentColor", opacity: 0.5 }} />
+      <PolarRadiusAxis tick={{ fill: "currentColor", opacity: 0.5 }} />
+      <Radar
+        name="日志分布"
         dataKey="value"
-        stroke="#8884d8"
-        strokeWidth={2}
-        fill="url(#radarGradient)"
-        fillOpacity={0.6}
-        animationDuration={800}
-        animationEasing="ease-in-out"
-        isAnimationActive={true}
+        stroke={COLORS.default}
+        fill={COLORS.default}
+        fillOpacity={0.2}
       />
-      <defs>
-        <radialGradient
-          id="radarGradient"
-          cx="50%"
-          cy="50%"
-          r="50%"
-          fx="50%"
-          fy="50%"
-        >
-          <stop offset="0%" stopColor="#8884d8" stopOpacity={0.8} />
-          <stop offset="100%" stopColor="#82ca9d" stopOpacity={0.4} />
-        </radialGradient>
-      </defs>
-      <RechartsTooltip
-        contentStyle={{
-          background: "rgba(255, 255, 255, 0.96)",
-          border: "1px solid rgba(0, 0, 0, 0.1)",
-          borderRadius: 8,
-          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-        }}
-        formatter={(value) => [value, "Count"]}
-        labelFormatter={(label) => `Category: ${label}`}
-      />
-      <RechartsLegend
-        wrapperStyle={{ paddingTop: 20 }}
-        formatter={(value) => <span style={{ color: "#666" }}>{value}</span>}
-      />
+      <Tooltip content={<CustomTooltip />} />
     </RadarChart>
   );
 
   const renderChart = () => {
-    switch (chartType) {
-      case "line":
-        return renderLineChart();
-      case "pie":
-        return renderPieChart();
-      case "radar":
-        return renderRadarChart();
-      default:
-        return renderBarChart();
-    }
-  };
-
-  const renderControls = () => (
-    <div className="flex flex-col gap-2 mb-2">
-      {" "}
-      {/* 竖屏布局 */}
-      <Select
-        value={chartType}
-        onValueChange={(value) =>
-          setChartType(value as "bar" | "pie" | "radar" | "line")
-        }
-      >
-        <SelectTrigger className="w-full">
-          {" "}
-          {/* 宽度适应 */}
-          <SelectValue placeholder="图表类型" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="bar">
-            <BarChart2 className="w-4 h-4 mr-2" />
-            柱状图
-          </SelectItem>
-          <SelectItem value="line">
-            <LineChartIcon className="w-4 h-4 mr-2" />
-            折线图
-          </SelectItem>
-          <SelectItem value="pie">
-            <PieChartIcon className="w-4 h-4 mr-2" />
-            饼图
-          </SelectItem>
-          <SelectItem value="radar">
-            <Radar className="w-4 h-4 mr-2" />
-            雷达图
-          </SelectItem>
-        </SelectContent>
-      </Select>
-      {groupBy !== "level" && (
-        <Select
-          value={timeRange}
-          onValueChange={(value: "hour" | "day" | "week" | "month") =>
-            setTimeRange(value)
-          }
-        >
-          <SelectTrigger className="w-full">
-            {" "}
-            {/* 宽度适应 */}
-            <SelectValue placeholder="时间范围" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="hour">每小时</SelectItem>
-            <SelectItem value="day">每天</SelectItem>
-            <SelectItem value="week">每周</SelectItem>
-            <SelectItem value="month">每月</SelectItem>
-          </SelectContent>
-        </Select>
-      )}
-    </div>
-  );
-
-  const handleExport = () => {
-    const svg = document.querySelector(".recharts-surface") as SVGElement;
-    if (svg) {
-      const serializer = new XMLSerializer();
-      const source = serializer.serializeToString(svg);
-      const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
-      saveAs(blob, `log-chart-${new Date().toISOString()}.svg`);
-    }
+    const charts = {
+      bar: renderBarChart,
+      line: renderLineChart,
+      pie: renderPieChart,
+      radar: renderRadarChart,
+    };
+    return charts[chartType]?.() || null;
   };
 
   return (
-    <div className="space-y-2">
-      {renderControls()}
-      <div className="h-[400px] w-full relative">
-        <ResponsiveContainer>{renderChart()}</ResponsiveContainer>
-        <Button // 使用 Button 组件
-          onClick={handleExport}
-          className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-white transition-colors border border-gray-200"
-        >
-          Export Chart
-        </Button>
-      </div>
-    </div>
+    <Card className="relative overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-base font-medium">日志统计</CardTitle>
+        <div className="flex items-center gap-2">
+          <Select value={chartType} onValueChange={(value: typeof chartType) => setChartType(value)}>
+            <SelectTrigger className="w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CHART_TYPES.map(({ value, label, icon: Icon }) => (
+                <SelectItem key={value} value={value}>
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    <span>{label}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleExport}
+            disabled={isExporting}
+            className={cn(
+              "transition-all",
+              isExporting && "animate-pulse"
+            )}
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-6">
+        <div className="h-[350px] w-full">
+          <ResponsiveContainer>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={chartType}
+                className="h-full"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                {renderChart()}
+              </motion.div>
+            </AnimatePresence>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
+
+export { LogChart };
+export type { LogChartProps };

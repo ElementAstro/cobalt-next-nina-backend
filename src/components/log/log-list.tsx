@@ -11,6 +11,8 @@ import LogPagination from "./log-filters";
 import LogFilters from "./log-filters";
 import LogActions from "./log-actions";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card } from "@/components/ui/card";
 
 const LogList: React.FC = () => {
   const { filteredLogs, isPaginationEnabled, currentPage, isRealTimeEnabled } =
@@ -34,16 +36,16 @@ const LogList: React.FC = () => {
     setShowScrollButton(scrollOffset < totalHeight - listHeight - 100);
   };
 
-  const scrollToBottom = () => {
+  const scrollToBottom = () => {  
     if (listRef.current) {
       listRef.current.scrollToItem(paginatedLogs.length - 1, "end");
     }
   };
 
   useEffect(() => {
-    // Simulate loading state
+    // Add initial loading state
     setIsLoading(true);
-    const loadingTimeout = setTimeout(() => setIsLoading(false), 500);
+    const loadingTimeout = setTimeout(() => setIsLoading(false), 800);
 
     if (isRealTimeEnabled && listRef.current) {
       listRef.current.scrollToItem(filteredLogs.length - 1);
@@ -67,109 +69,139 @@ const LogList: React.FC = () => {
     : filteredLogs;
 
   return (
-    <div className="flex flex-col h-full gap-2">
-      {" "}
-      {/* Adjusted gap for vertical layout */}
+    <Card className="flex flex-col h-full dark:bg-gray-900/80 backdrop-blur-sm">
       <motion.div
-        className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md shadow-sm p-2" // Added padding
+        className="sticky top-0 z-20 backdrop-blur-xl bg-background/80 dark:bg-gray-900/80 border-b"
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.3 }}
       >
-        <div className="flex flex-col gap-2">
-          {" "}
-          {/* Stack filters and actions vertically */}
+        <div className="flex flex-col space-y-2 p-4">
           <LogFilters />
           <LogActions />
         </div>
       </motion.div>
-      <div
-        className={`flex-1 min-h-0 relative border dark:border-gray-800 transition-all duration-300 ${
-          isScrolling ? "shadow-lg" : "shadow-sm"
-        }`}
-      >
-        {isLoading && (
-          <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm z-10 flex items-center justify-center">
-            <div className="animate-pulse flex space-x-4">
-              <div className="flex-1 space-y-4 py-1">
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded"></div>
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6"></div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        <AnimatePresence>
-          {!isLoading && filteredLogs.length === 0 && (
+      <ScrollArea className="flex-1 relative">
+        <div
+          className={`relative border-0 transition-shadow duration-300 ${
+            isScrolling ? "shadow-lg" : ""
+          }`}
+        >
+          {isLoading && (
             <motion.div
-              className="absolute inset-0 flex items-center justify-center"
+              className="absolute inset-0 bg-background/50 dark:bg-gray-900/50 backdrop-blur-sm z-10 flex items-center justify-center"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <div className="text-center text-gray-500 dark:text-gray-400">
-                <div className="text-2xl mb-2">📄</div>
-                <p>No logs available</p>
+              <div className="space-y-4 w-1/2">
+                {[1, 2, 3].map((i) => (
+                  <motion.div
+                    key={i}
+                    className="h-16 bg-muted/20 rounded-lg animate-pulse"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                  />
+                ))}
               </div>
             </motion.div>
           )}
-        </AnimatePresence>
 
-        {isRealTimeEnabled && showScrollButton && (
-          <Button // Use the Button component here
-            onClick={scrollToBottom}
-            variant="secondary" // Example variant
-            size="icon"
-            className="fixed bottom-24 right-8 p-3 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            <ArrowDownCircle className="w-6 h-6 text-gray-700 dark:text-gray-300" />
-          </Button>
-        )}
-        <AutoSizer>
-          {({ height, width }) => (
-            <List
-              ref={listRef}
-              height={height}
-              itemCount={paginatedLogs.length}
-              itemSize={64}
-              width={width}
-              className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500 transition-colors"
-              overscanCount={5}
-              itemData={paginatedLogs}
-              onScroll={handleScroll}
+          <AnimatePresence>
+            {!isLoading && filteredLogs.length === 0 && (
+              <motion.div
+                className="absolute inset-0 flex items-center justify-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="text-center text-muted-foreground">
+                  <motion.div
+                    initial={{ scale: 0.8 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", bounce: 0.4 }}
+                    className="text-4xl mb-4"
+                  >
+                    📄
+                  </motion.div>
+                  <p className="text-lg">暂无日志数据</p>
+                  <p className="text-sm mt-2">尝试调整过滤条件或刷新日志</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {isRealTimeEnabled && showScrollButton && (
+            <motion.div
+              className="fixed bottom-8 right-8 z-30"
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
             >
-              {({ index, style }) => (
-                <motion.div
-                  style={style}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.02 }}
-                  whileHover={{ scale: 1.02 }}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                >
-                  <LogItem index={index} style={style} />
-                </motion.div>
-              )}
-            </List>
+              <Button
+                onClick={scrollToBottom}
+                variant="secondary"
+                size="icon"
+                className="w-12 h-12 rounded-full shadow-lg bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                <ArrowDownCircle className="w-6 h-6" />
+              </Button>
+            </motion.div>
           )}
-        </AutoSizer>
-      </div>
+
+          <AutoSizer>
+            {({ height, width }) => (
+              <List
+                ref={listRef}
+                height={height}
+                itemCount={paginatedLogs.length}
+                itemSize={64}
+                width={width}
+                className="scrollbar-thin scrollbar-thumb-primary/20 hover:scrollbar-thumb-primary/30 scrollbar-track-transparent"
+                overscanCount={5}
+                itemData={paginatedLogs}
+                onScroll={handleScroll}
+              >
+                {({ index, style }) => (
+                  <motion.div
+                    style={style}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.3,
+                      delay: index * 0.03,
+                      ease: "easeOut",
+                    }}
+                  >
+                    <LogItem index={index} style={style} />
+                  </motion.div>
+                )}
+              </List>
+            )}
+          </AutoSizer>
+        </div>
+      </ScrollArea>
+
       <AnimatePresence>
         {isPaginationEnabled && (
           <motion.div
-            className="sticky bottom-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-2" // Added padding
+            className="sticky bottom-0 bg-background/80 dark:bg-gray-900/80 backdrop-blur-xl border-t p-4"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 20, opacity: 0 }}
             transition={{ duration: 0.3 }}
-            key="pagination"
           >
             <LogPagination />
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </Card>
   );
 };
 

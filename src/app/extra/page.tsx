@@ -39,6 +39,7 @@ import { useSettingsStore } from "@/stores/extra/settings";
 import useWorkspaceStore from "@/stores/extra/workspace";
 import {
   CheckSquare,
+  Clock,
   Grid,
   List,
   Menu,
@@ -167,8 +168,10 @@ export default function SoftwareList() {
     const matchesSearch = app.name
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
-    const matchesCategory =
-      !selectedCategory || app.category === selectedCategory;
+    const matchesCategory = !selectedCategory ||
+      (Array.isArray(selectedCategory)
+        ? selectedCategory.includes(app.category)
+        : app.category === selectedCategory);
     return matchesSearch && matchesCategory;
   });
 
@@ -270,9 +273,13 @@ export default function SoftwareList() {
     [launchApp, addUsage, trackAppUsage]
   );
 
+  // 同步主题设置
   useEffect(() => {
     if (appearance.theme !== themeMode) {
-      setThemeMode(appearance.theme);
+      const newTheme = appearance.theme === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : appearance.theme;
+      setThemeMode(newTheme);
     }
   }, [appearance.theme, themeMode, setThemeMode]);
 
@@ -302,11 +309,6 @@ export default function SoftwareList() {
     }
   };
 
-  // 修复排序模式的类型
-  const handleSortModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSortMode(e.target.value as SortMode);
-  };
-
   if (!mounted) return null;
 
   return (
@@ -320,69 +322,117 @@ export default function SoftwareList() {
             ease: "easeOut",
           },
         }}
-        className="min-h-screen bg-background flex flex-col"
+        className="min-h-screen bg-background/95 dark:bg-background/90 backdrop-blur-sm flex flex-col"
       >
         {/* 新增设置面板 */}
-        <div className="p-2 border-b flex flex-wrap gap-4 items-center">
-          <div className="flex items-center gap-1">
-            <Label>工作区:</Label>
-            <Select
-              value={activeWorkspace || ""}
-              onValueChange={handleWorkspaceChange}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="选择工作区" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(workspaces).map((ws) => (
-                  <SelectItem key={ws.id} value={ws.id}>
-                    {ws.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="p-4 border-b bg-background/60 dark:bg-background/40 backdrop-blur-md shadow-sm"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            <div className="space-y-2 p-4 rounded-lg bg-background/40 dark:bg-background/20 border shadow-sm">
+              <Label className="text-sm font-medium">工作区设置</Label>
+              <Select
+                value={activeWorkspace || ""}
+                onValueChange={handleWorkspaceChange}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="选择工作区" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.values(workspaces).map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>
+                      {ws.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleUpdateLayout}
+                className="w-full"
+              >
+                更新布局
+              </Button>
+            </div>
+            
+            <div className="space-y-2 p-4 rounded-lg bg-background/40 dark:bg-background/20 border shadow-sm">
+              <Label className="text-sm font-medium">显示设置</Label>
+              <Select value={sortMode} onValueChange={(value: SortMode) => setSortMode(value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="选择排序方式" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">按名称</SelectItem>
+                  <SelectItem value="date">按日期</SelectItem>
+                  <SelectItem value="category">按分类</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-sm">网格大小</Label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setGridSize(Math.max(1, gridSize - 1))}
+                    className="h-8 w-8"
+                  >
+                    -
+                  </Button>
+                  <span className="w-8 text-center">{gridSize}</span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setGridSize(gridSize + 1)}
+                    className="h-8 w-8"
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 p-4 rounded-lg bg-background/40 dark:bg-background/20 border shadow-sm">
+              <Label className="text-sm font-medium">界面选项</Label>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">紧凑模式</Label>
+                  <input
+                    type="checkbox"
+                    checked={isCompactMode}
+                    onChange={() => setCompactMode(!isCompactMode)}
+                    className="rounded border-primary"
+                  />
+                </div>
+                <Button variant="outline" size="sm" onClick={() => updateSettings({})}>
+                  <Settings className="w-4 h-4 mr-2" />
+                  更新设置
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 p-4 rounded-lg bg-background/40 dark:bg-background/20 border shadow-sm">
+              <Label className="text-sm font-medium">统计信息</Label>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">收藏总数</Label>
+                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-sm">
+                    {favorites.length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">统计总数</Label>
+                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-sm">
+                    {analyticsFavorites.length}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <Button onClick={handleUpdateLayout}>更新布局</Button>
-          <div className="flex items-center gap-1">
-            <Label>排序:</Label>
-            <select
-              value={sortMode}
-              onChange={handleSortModeChange}
-              className="p-1 border rounded"
-            >
-              <option value="name">名称</option>
-              <option value="date">日期</option>
-              <option value="category">分类</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-1">
-            <Label>网格大小: {gridSize}</Label>
-            <Button onClick={() => setGridSize(gridSize + 1)}>+</Button>
-            <Button onClick={() => setGridSize(Math.max(1, gridSize - 1))}>
-              -
-            </Button>
-          </div>
-          <div className="flex items-center gap-1">
-            <Label>紧凑模式:</Label>
-            <input
-              type="checkbox"
-              checked={isCompactMode}
-              onChange={() => setCompactMode(!isCompactMode)}
-            />
-          </div>
-          <Button onClick={() => updateSettings({})}>
-            <Settings className="w-4 h-4 mr-1" />
-            更新设置
-          </Button>
-          <div className="flex items-center gap-1">
-            <Label>收藏数:</Label>
-            <span>{favorites.length}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Label>收藏统计:</Label>
-            <span>{analyticsFavorites.length}</span>
-          </div>
-        </div>
+        </motion.div>
 
         <main className="flex-1 h-screen overflow-y-auto">
           <div className="container mx-auto p-3 max-w-7xl">
@@ -392,32 +442,40 @@ export default function SoftwareList() {
               animate={{ y: 0, opacity: 1 }}
               className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm -mx-3 px-3 py-2 border-b"
             >
-              <div className="flex items-center gap-4 p-4 border-b">
+              <div className="flex items-center gap-4 p-4 border-b bg-background/40 dark:bg-background/20 backdrop-blur-md">
                 {!isDesktop && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setSidebarOpen(!isSidebarOpen)}
-                  >
-                    <Menu className="h-5 w-5" />
-                  </Button>
-                )}
-                <div className="flex flex-wrap gap-4 items-center flex-1 min-w-[200px]">
                   <motion.div
-                    className="flex-1"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setSidebarOpen(!isSidebarOpen)}
+                      className="hover:bg-primary/10"
+                    >
+                      <Menu className="h-5 w-5" />
+                    </Button>
+                  </motion.div>
+                )}
+                <div className="flex-1 min-w-[200px]">
+                  <motion.div
+                    className="w-full max-w-2xl mx-auto"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
                   >
                     <SearchBar
                       initialSuggestions={apps.map((app) => app.name)}
                       value={searchQuery}
                       onChange={setSearchQuery}
-                      placeholder="搜索应用..."
+                      placeholder="搜索应用...(Ctrl+F)"
                       variant="default"
+                      className="w-full shadow-sm"
                     />
                   </motion.div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {isSelectionMode && (
                     <>
                       <Button
@@ -494,13 +552,36 @@ export default function SoftwareList() {
                   </Button>
                 </div>
               </div>
-              {/* 横屏模式下显示分类过滤器 */}
-              <div className="landscape:hidden">
-                <CategoryFilter
-                  selectedCategory={selectedCategory}
-                  onSelectCategory={setSelectedCategory}
-                />
-              </div>
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+                className="py-3 px-4 bg-background/40 dark:bg-background/20 backdrop-blur-md border-t"
+              >
+                <div className="max-w-5xl mx-auto space-y-2">
+                  <div className="w-full">
+                    <CategoryFilter
+                      selectedCategory={selectedCategory}
+                      onSelectCategory={setSelectedCategory}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-primary/60"></span>
+                        显示: {filteredApps.length}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-primary/30"></span>
+                        总计: {apps.length}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>分类数: {Array.from(new Set(apps.map(app => app.category))).length}</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
 
             {/* Content Sections */}
@@ -524,16 +605,30 @@ export default function SoftwareList() {
                 )}
               >
                 {/* Pinned Section */}
-                <section>
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold">已固定</h2>
+                <section className="bg-background/40 dark:bg-background/20 rounded-lg p-4 border shadow-sm">
+                  <motion.div
+                    className="flex justify-between items-center mb-4"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Pin className="w-5 h-5 text-primary" />
+                      <h2 className="text-lg font-semibold">已固定</h2>
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-sm">
+                        {pinnedApps.length}
+                      </span>
+                    </div>
                     <Link
                       href="#"
-                      className="text-sm text-muted-foreground hover:underline"
+                      className="text-sm text-muted-foreground hover:underline group flex items-center gap-1"
                     >
-                      全部 {">"}
+                      全部
+                      <span className="group-hover:translate-x-0.5 transition-transform">
+                        {">"}
+                      </span>
                     </Link>
-                  </div>
+                  </motion.div>
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
@@ -581,10 +676,28 @@ export default function SoftwareList() {
                 </section>
 
                 {/* All Apps Section */}
-                <section>
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold">所有应用</h2>
-                  </div>
+                <section className="bg-background/40 dark:bg-background/20 rounded-lg p-4 border shadow-sm">
+                  <motion.div
+                    className="flex justify-between items-center mb-4"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Grid className="w-5 h-5 text-primary" />
+                      <h2 className="text-lg font-semibold">所有应用</h2>
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-sm">
+                        {sortedApps.length}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span>按 {
+                        sortMode === "name" ? "名称" :
+                        sortMode === "date" ? "日期" :
+                        "分类"
+                      } 排序</span>
+                    </div>
+                  </motion.div>
                   <motion.div
                     className={cn(
                       view === "grid"
@@ -636,18 +749,32 @@ export default function SoftwareList() {
                 </section>
 
                 {/* Recent Apps Section */}
-                <section>
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold">最近使用</h2>
+                <section className="bg-background/40 dark:bg-background/20 rounded-lg p-4 border shadow-sm">
+                  <motion.div
+                    className="flex justify-between items-center mb-4"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-primary" />
+                      <h2 className="text-lg font-semibold">最近使用</h2>
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-sm">
+                        {recentApps.length}
+                      </span>
+                    </div>
                     <Link
                       href="#"
-                      className="text-sm text-muted-foreground hover:underline"
+                      className="text-sm text-muted-foreground hover:underline group flex items-center gap-1"
                     >
-                      更多 {">"}
+                      更多
+                      <span className="group-hover:translate-x-0.5 transition-transform">
+                        {">"}
+                      </span>
                     </Link>
-                  </div>
+                  </motion.div>
                   <motion.div
-                    className="grid gap-2"
+                    className="grid gap-3"
                     initial="hidden"
                     animate="visible"
                     variants={{
@@ -690,10 +817,34 @@ export default function SoftwareList() {
                 </section>
               </motion.div>
             </motion.div>
-            {/* 添加统计部分 */}
-            <div className="mt-6">
-              <AppStatistics />
-            </div>
+            {/* 统计部分 */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+              className="mt-8 mb-6"
+            >
+              <div className="bg-background/40 dark:bg-background/20 rounded-lg p-6 border shadow-sm">
+                <motion.div
+                  className="flex items-center gap-2 mb-4"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Settings className="w-5 h-5 text-primary" />
+                  <h2 className="text-lg font-semibold">使用统计</h2>
+                </motion.div>
+                <div className="relative">
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-r from-background/50 to-transparent pointer-events-none dark:from-background/20"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.5 }}
+                  />
+                  <AppStatistics />
+                </div>
+              </div>
+            </motion.div>
           </div>
         </main>
       </motion.div>

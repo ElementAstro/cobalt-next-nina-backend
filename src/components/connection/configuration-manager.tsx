@@ -11,17 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHeader,
   TableHead,
@@ -45,6 +38,9 @@ import {
   XCircle,
   CheckCircle,
   Home,
+  Settings,
+  History,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { z } from "zod";
@@ -52,6 +48,7 @@ import { useConnectionConfigStore } from "@/stores/connection/configStore";
 import { useUIStore } from "@/stores/connection/uiStore";
 import { useConnectionStatusStore } from "@/stores/connection/statusStore";
 import { usePortScanStore } from "@/stores/connection/portScanStore";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ConnectionError {
   code: string;
@@ -63,7 +60,6 @@ const configSchema = z.object({
   connectionTimeout: z.number().min(1).max(300),
   maxRetries: z.number().min(1).max(10),
   debugMode: z.boolean(),
-  // 添加可选的连接配置验证
   connection: z
     .object({
       ip: z.string().min(1).optional(),
@@ -105,18 +101,15 @@ export function ConfigurationManager({
   onClose,
   onImport,
 }: ConfigurationManagerProps) {
-  // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(isOpen);
-  // Import config state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [importStatus, setImportStatus] = useState<
-    "idle" | "success" | "error"
-  >("idle");
+  const [importStatus, setImportStatus] = useState<"idle" | "success" | "error">(
+    "idle"
+  );
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Advanced settings store
   const {
     connectionTimeout,
     maxRetries,
@@ -125,17 +118,12 @@ export function ConfigurationManager({
     saveSettings,
     loadSettings,
   } = useConnectionConfigStore();
-  // Connection store (for history and dark mode)
+
   const { toggleDarkMode, isDarkMode } = useUIStore();
 
-  const {
-    connectionHistory,
-    errorHistory,
-    clearConnectionHistory,
-    isConnected,
-  } = useConnectionStatusStore();
+  const { connectionHistory, errorHistory, clearConnectionHistory, isConnected } =
+    useConnectionStatusStore();
 
-  // On mount load advanced settings
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
@@ -144,10 +132,7 @@ export function ConfigurationManager({
     setIsDialogOpen(isOpen);
   }, [isOpen]);
 
-  // File change handler for importing configuration
-  const handleFileChange = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setSelectedFile(file);
@@ -160,7 +145,6 @@ export function ConfigurationManager({
       const config = JSON.parse(fileContent);
       const validatedConfig = configSchema.parse(config);
 
-      // 更新高级设置
       if (validatedConfig.connectionTimeout) {
         updateSettings({
           connectionTimeout: validatedConfig.connectionTimeout,
@@ -169,7 +153,6 @@ export function ConfigurationManager({
         });
       }
 
-      // 如果存在连接配置，则通知父组件
       if (validatedConfig.connection) {
         onImport(validatedConfig.connection);
       }
@@ -209,7 +192,6 @@ export function ConfigurationManager({
       reader.readAsText(file);
     });
 
-  // Handler for saving advanced settings
   const handleSaveSettings = () => {
     saveSettings();
     toast({
@@ -219,7 +201,6 @@ export function ConfigurationManager({
     });
   };
 
-  // For theme change via dropdown demo
   const handleThemeChange = (theme: "dark" | "light") => {
     if (theme === "dark" && !isDarkMode) {
       toggleDarkMode();
@@ -229,15 +210,23 @@ export function ConfigurationManager({
     }
   };
 
-  // 渲染错误历史列表
   const renderErrorHistory = () =>
     errorHistory?.map((error: ConnectionError, idx: number) => (
       <TableRow key={idx}>
-        <TableCell>{error.code}</TableCell>
+        <TableCell className="font-mono">{error.code}</TableCell>
         <TableCell>{error.message}</TableCell>
-        <TableCell>{new Date(error.timestamp).toLocaleTimeString()}</TableCell>
+        <TableCell className="text-sm text-muted-foreground">
+          {new Date(error.timestamp).toLocaleTimeString()}
+        </TableCell>
       </TableRow>
     ));
+
+  const fadeInUp = {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -20 },
+    transition: { duration: 0.3 },
+  };
 
   return (
     <Dialog
@@ -247,277 +236,316 @@ export function ConfigurationManager({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="w-[90vw] max-w-6xl h-[85vh] p-6 dark:bg-gray-900 overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl font-bold">
-            <Save className="w-6 h-6" />
-            配置管理器 - 天文摄影软件
-          </DialogTitle>
-        </DialogHeader>
-
-        <Tabs
-          defaultValue="import"
-          className="flex-1 overflow-hidden flex flex-col"
+      <DialogContent className="w-[90vw] max-w-6xl h-[85vh] p-0 overflow-hidden bg-background border-none dark:bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <motion.div
+          className="h-full flex flex-col"
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={fadeInUp}
         >
-          <TabsList className="w-full grid grid-cols-2 mb-4">
-            <TabsTrigger value="import">导入配置</TabsTrigger>
-            <TabsTrigger value="advanced">高级设置</TabsTrigger>
-          </TabsList>
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
+              <Settings className="w-5 h-5 text-primary" />
+              配置管理器 - 天文摄影软件
+            </DialogTitle>
+          </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto pr-4">
-            <TabsContent value="import" className="space-y-4 min-h-[400px]">
-              <div>
-                <Label className="block text-sm font-medium mb-2">
-                  导入配置文件
-                </Label>
-                <div className="flex space-x-2 items-center">
-                  <Input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".json"
-                    onChange={handleFileChange}
-                    className="flex-1"
-                    disabled={isLoading}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isLoading}
-                    className="flex items-center gap-1"
-                  >
-                    {isLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : importStatus === "success" ? (
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                    导入
-                  </Button>
-                </div>
-              </div>
-              {selectedFile && (
-                <div className="flex items-center space-x-2">
-                  <FileText className="w-4 h-4 text-green-500" />
-                  <span className="text-sm">{selectedFile.name}</span>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setSelectedFile(null)}
-                    disabled={isLoading}
-                  >
-                    <XCircle className="w-4 h-4 text-red-500" />
-                  </Button>
-                </div>
-              )}
-              {importError && (
-                <Alert className="p-2">
-                  <AlertTitle>错误</AlertTitle>
-                  <AlertDescription className="text-sm">
-                    {importError}
-                  </AlertDescription>
-                </Alert>
-              )}
-            </TabsContent>
+          <Tabs defaultValue="import" className="flex-1 overflow-hidden">
+            <TabsList className="w-full px-6 border-b">
+              <TabsTrigger value="import" className="flex items-center gap-2">
+                <Upload className="w-4 h-4" />
+                导入配置
+              </TabsTrigger>
+              <TabsTrigger value="advanced" className="flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                高级设置
+              </TabsTrigger>
+              <TabsTrigger value="history" className="flex items-center gap-2">
+                <History className="w-4 h-4" />
+                错误日志
+              </TabsTrigger>
+            </TabsList>
 
-            <TabsContent value="advanced" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <Label
-                        htmlFor="connectionTimeout"
-                        className="text-sm font-medium mb-1"
-                      >
-                        连接超时 (秒)
-                      </Label>
-                      <Input
-                        id="connectionTimeout"
-                        type="number"
-                        value={connectionTimeout}
-                        onChange={(e) =>
-                          updateSettings({
-                            connectionTimeout: Number(e.target.value),
-                          })
-                        }
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <Label
-                        htmlFor="maxRetries"
-                        className="text-sm font-medium mb-1"
-                      >
-                        最大重试次数
-                      </Label>
-                      <Input
-                        id="maxRetries"
-                        type="number"
-                        value={maxRetries}
-                        onChange={(e) =>
-                          updateSettings({ maxRetries: Number(e.target.value) })
-                        }
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="flex flex-col">
-                      <Label
-                        htmlFor="debugMode"
-                        className="text-sm font-medium mb-1"
-                      >
-                        调试模式
-                      </Label>
-                      <div className="flex items-center">
-                        <Switch
-                          id="debugMode"
-                          checked={debugMode}
-                          onCheckedChange={(checked) =>
-                            updateSettings({ debugMode: checked })
-                          }
-                        />
-                        <span className="ml-2 text-sm">
-                          {debugMode ? "开启" : "关闭"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Button
-                      onClick={handleSaveSettings}
-                      className="flex items-center gap-1"
-                    >
-                      <Save className="w-4 h-4" />
-                      保存设置
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="flex items-center gap-1"
-                        >
-                          <Home className="w-4 h-4" />
-                          主题
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-40">
-                        <DropdownMenuLabel>选择主题</DropdownMenuLabel>
-                        <DropdownMenuItem
-                          onClick={() => handleThemeChange("light")}
-                        >
-                          Light
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleThemeChange("dark")}
-                        >
-                          Dark
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <TabsContent value="import" className="mt-0">
+                <motion.div
+                  className="space-y-4"
+                  {...fadeInUp}
+                >
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-sm font-medium">
-                        当前连接信息
-                      </CardTitle>
+                      <CardTitle className="text-lg">导入配置文件</CardTitle>
                     </CardHeader>
-                    <CardContent className="text-sm">
-                      <p>连接状态: {isConnected ? "已连接" : "未连接"}</p>
-                      <p>历史记录: {connectionHistory.length} 次</p>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <Input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".json"
+                          onChange={handleFileChange}
+                          className="flex-1"
+                          disabled={isLoading}
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isLoading}
+                          className="flex items-center gap-2 min-w-[120px]"
+                        >
+                          {isLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : importStatus === "success" ? (
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                          导入
+                        </Button>
+                      </div>
+
+                      <AnimatePresence>
+                        {selectedFile && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="flex items-center gap-2 p-2 bg-muted rounded-md"
+                          >
+                            <FileText className="w-4 h-4 text-primary" />
+                            <span className="text-sm flex-1">{selectedFile.name}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setSelectedFile(null)}
+                              disabled={isLoading}
+                            >
+                              <XCircle className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          </motion.div>
+                        )}
+
+                        {importError && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                          >
+                            <Alert variant="destructive">
+                              <AlertTriangle className="w-4 h-4" />
+                              <AlertTitle>错误</AlertTitle>
+                              <AlertDescription>{importError}</AlertDescription>
+                            </Alert>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </CardContent>
                   </Card>
+                </motion.div>
+              </TabsContent>
 
-                  <Accordion type="single" collapsible>
-                    <AccordionItem value="errorHistory">
-                      <AccordionTrigger className="text-sm">
-                        错误日志
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        {errorHistory?.length ? (
+              <TabsContent value="advanced" className="mt-0">
+                <motion.div
+                  className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+                  {...fadeInUp}
+                >
+                  <div className="lg:col-span-2 space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">基本设置</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="connectionTimeout">连接超时 (秒)</Label>
+                            <Input
+                              id="connectionTimeout"
+                              type="number"
+                              value={connectionTimeout}
+                              onChange={(e) =>
+                                updateSettings({
+                                  connectionTimeout: Number(e.target.value),
+                                })
+                              }
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="maxRetries">最大重试次数</Label>
+                            <Input
+                              id="maxRetries"
+                              type="number"
+                              value={maxRetries}
+                              onChange={(e) =>
+                                updateSettings({ maxRetries: Number(e.target.value) })
+                              }
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="debugMode">调试模式</Label>
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                id="debugMode"
+                                checked={debugMode}
+                                onCheckedChange={(checked) =>
+                                  updateSettings({ debugMode: checked })
+                                }
+                              />
+                              <span className="text-sm text-muted-foreground">
+                                {debugMode ? "开启" : "关闭"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <Button
+                            onClick={handleSaveSettings}
+                            className="flex items-center gap-2"
+                          >
+                            <Save className="w-4 h-4" />
+                            保存设置
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" className="flex items-center gap-2">
+                                <Home className="w-4 h-4" />
+                                主题设置
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              <DropdownMenuLabel>选择主题</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => handleThemeChange("light")}>
+                                浅色模式
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleThemeChange("dark")}>
+                                深色模式
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">端口扫描历史</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {usePortScanStore.getState().scanHistory.length > 0 ? (
                           <Table>
-                            <TableCaption>最近错误日志</TableCaption>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="w-1/3">代码</TableHead>
-                                <TableHead className="w-1/3">信息</TableHead>
-                                <TableHead className="w-1/3">时间</TableHead>
+                                <TableHead>日期</TableHead>
+                                <TableHead>IP</TableHead>
+                                <TableHead>开放端口</TableHead>
                               </TableRow>
                             </TableHeader>
-                            <TableBody>{renderErrorHistory()}</TableBody>
+                            <TableBody>
+                              {usePortScanStore
+                                .getState()
+                                .scanHistory.slice(0, 5)
+                                .map((item) => (
+                                  <TableRow key={item.id}>
+                                    <TableCell>{item.date}</TableCell>
+                                    <TableCell>{item.ipAddress}</TableCell>
+                                    <TableCell>{item.openPorts}</TableCell>
+                                  </TableRow>
+                                ))}
+                            </TableBody>
                           </Table>
                         ) : (
-                          <p className="text-sm text-muted-foreground">
-                            暂无错误日志
-                          </p>
+                          <p className="text-sm text-muted-foreground">暂无扫描记录</p>
                         )}
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                </div>
-              </div>
+                      </CardContent>
+                    </Card>
+                  </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <Label className="block text-sm font-medium mb-2">
-                    扫描历史
-                  </Label>
-                  {usePortScanStore.getState().scanHistory.length > 0 ? (
-                    <Table>
-                      <TableCaption>端口扫描历史</TableCaption>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>日期</TableHead>
-                          <TableHead>IP</TableHead>
-                          <TableHead>开放端口</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {usePortScanStore.getState().scanHistory.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell>{item.date}</TableCell>
-                            <TableCell>{item.ipAddress}</TableCell>
-                            <TableCell>{item.openPorts}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      暂无扫描记录
-                    </p>
-                  )}
-                </div>
+                  <div className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">连接状态</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`w-2 h-2 rounded-full ${
+                              isConnected ? "bg-green-500" : "bg-red-500"
+                            }`}
+                          />
+                          <span className="text-sm">
+                            {isConnected ? "已连接" : "未连接"}
+                          </span>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          历史连接次数: {connectionHistory.length}
+                        </div>
+                      </CardContent>
+                    </Card>
 
-                <div>
-                  <Label className="block text-sm font-medium mb-2">
-                    选择日期
-                  </Label>
-                  <Calendar
-                    mode="single"
-                    selected={new Date()}
-                    onSelect={() => {}}
-                    className="rounded-lg border w-full"
-                  />
-                </div>
-              </div>
-            </TabsContent>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">设备日历</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <Calendar
+                          mode="single"
+                          selected={new Date()}
+                          onSelect={() => {}}
+                          className="rounded-md border"
+                        />
+                      </CardContent>
+                    </Card>
+                  </div>
+                </motion.div>
+              </TabsContent>
+
+              <TabsContent value="history" className="mt-0">
+                <motion.div {...fadeInUp}>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle className="text-lg">错误日志</CardTitle>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={clearConnectionHistory}
+                        className="flex items-center gap-2"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        清空历史
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      {errorHistory?.length ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-1/4">错误代码</TableHead>
+                              <TableHead className="w-1/2">错误信息</TableHead>
+                              <TableHead className="w-1/4">时间</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>{renderErrorHistory()}</TableBody>
+                        </Table>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          暂无错误日志
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              </TabsContent>
+            </div>
+          </Tabs>
+
+          <div className="px-6 py-4 border-t">
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              关闭
+            </Button>
           </div>
-        </Tabs>
-
-        <div className="mt-4 pt-4 border-t flex justify-between items-center">
-          <Button
-            variant="destructive"
-            onClick={clearConnectionHistory}
-            className="flex items-center gap-2"
-          >
-            <XCircle className="w-4 h-4" />
-            清空连接历史
-          </Button>
-          <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-            关闭
-          </Button>
-        </div>
+        </motion.div>
       </DialogContent>
     </Dialog>
   );

@@ -1,13 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { useCallback, useEffect, useRef, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { CustomColors, GuidePoint } from "@/types/guiding/guiding";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Download, FileJson, RefreshCw } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { PeakChart } from "./peak-chart";
-import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +24,23 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Download,
+  FileJson,
+  RotateCw,
+  Maximize,
+  Minimize,
+  Eye,
+  Crosshair,
+  Move,
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 interface TargetDiagramProps {
   radius: number;
@@ -42,10 +64,10 @@ export function TargetDiagram({
   circleCount = 3,
   crosshairColor = colors.secondary,
   pointSize = 4,
-  canvasSize = { width: 200, height: 200 },
-  showStats = false,
-  enableExport = false,
-  showInfo = false,
+  canvasSize = { width: 300, height: 300 },
+  showStats = true,
+  enableExport = true,
+  showInfo = true,
 }: TargetDiagramProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stats, setStats] = useState({
@@ -53,99 +75,327 @@ export function TargetDiagram({
     maxDeviation: 0,
     avgDeviation: 0,
   });
-  const positionHistory = useRef<Array<{ x: number; y: number }>>([]);
+  const [showMeasurements, setShowMeasurements] = useState(true);
+  const [showCrosshair, setShowCrosshair] = useState(true);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const positionHistory = useRef<GuidePoint[]>([]);
+  const [showReferencePoints, setShowReferencePoints] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // 计算导星统计数据
   const calculateStats = useCallback(() => {
     const centerX = canvasSize.width / 2;
     const centerY = canvasSize.height / 2;
 
-    // 计算相对于中心点的距离
-    const distanceFromCenter = Math.sqrt(
+    // 计算当前点到中心的距离
+    const distance = Math.sqrt(
       Math.pow(currentPosition.x - centerX, 2) +
         Math.pow(currentPosition.y - centerY, 2)
     );
 
+    // 更新位置历史
     positionHistory.current.push(currentPosition);
     if (positionHistory.current.length > 100) {
       positionHistory.current.shift();
     }
 
+    // 计算偏差
     const deviations = positionHistory.current.map((pos) =>
       Math.sqrt(Math.pow(pos.x - centerX, 2) + Math.pow(pos.y - centerY, 2))
     );
 
     setStats({
-      distance: distanceFromCenter,
+      distance,
       maxDeviation: Math.max(...deviations),
       avgDeviation:
         deviations.reduce((a, b) => a + b, 0) / deviations.length || 0,
     });
-  }, [canvasSize.height, canvasSize.width, currentPosition]);
+  }, [canvasSize.width, canvasSize.height, currentPosition]);
 
-  const { toast } = useToast();
-
-  const handleExportImage = () => {
-    try {
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        throw new Error("无法获取画布元素");
-      }
-
-      const link = document.createElement("a");
-      link.download = "target-diagram.png";
-      link.href = canvas.toDataURL();
-      link.click();
-
-      toast({
-        title: "导出成功",
-        description: "图像已成功导出",
-        variant: "default",
+  // 处理缩放
+  const handleZoom = useCallback(
+    (factor: number) => {
+      setZoomLevel((prev) => {
+        const newZoom = Math.max(0.5, Math.min(4, prev * factor));
+        toast({
+          title: "缩放更新",
+          description: `缩放级别: ${newZoom.toFixed(1)}x`,
+        });
+        return newZoom;
       });
-    } catch (error) {
-      toast({
-        title: "导出失败",
-        description:
-          error instanceof Error ? error.message : "导出图像时发生错误",
-        variant: "destructive",
-      });
-    }
-  };
+    },
+    []
+  );
 
-  const handleExportData = () => {
-    try {
-      const data = {
-        currentPosition,
-        stats,
-        history: positionHistory.current,
+  // 处理拖拽
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (!isDragging) return;
+
+      e.preventDefault();
+      const newOffset = {
+        x: panOffset.x + (e.clientX - dragStart.x) / zoomLevel,
+        y: panOffset.y + (e.clientY - dragStart.y) / zoomLevel,
       };
 
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.download = "target-data.json";
-      link.href = url;
-      link.click();
-      URL.revokeObjectURL(url);
+      setPanOffset(newOffset);
+      setDragStart({ x: e.clientX, y: e.clientY });
+    },
+    [isDragging, dragStart, panOffset, zoomLevel]
+  );
 
-      toast({
-        title: "导出成功",
-        description: "数据已成功导出",
-        variant: "default",
-      });
-    } catch (error) {
-      toast({
-        title: "导出失败",
-        description:
-          error instanceof Error ? error.message : "导出数据时发生错误",
-        variant: "destructive",
-      });
+  // 绘制函数
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // 清空画布
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // 设置高DPI支持
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvasSize.width * dpr;
+    canvas.height = canvasSize.height * dpr;
+    canvas.style.width = `${canvasSize.width}px`;
+    canvas.style.height = `${canvasSize.height}px`;
+    ctx.scale(dpr, dpr);
+
+    // 应用变换
+    ctx.save();
+    ctx.translate(
+      canvasSize.width / 2 + panOffset.x,
+      canvasSize.height / 2 + panOffset.y
+    );
+    ctx.scale(zoomLevel, zoomLevel);
+    ctx.translate(-canvasSize.width / 2, -canvasSize.height / 2);
+
+    // 绘制背景网格
+    const gridSize = 20;
+    ctx.strokeStyle = `${colors.secondary}20`;
+    ctx.lineWidth = 0.5 / zoomLevel;
+    for (let x = 0; x < canvasSize.width; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvasSize.height);
+      ctx.stroke();
     }
-  };
+    for (let y = 0; y < canvasSize.height; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvasSize.width, y);
+      ctx.stroke();
+    }
 
-  const handleReset = () => {
+    // 绘制同心圆
+    const centerX = canvasSize.width / 2;
+    const centerY = canvasSize.height / 2;
+    const time = Date.now() * 0.001 * animationSpeed;
+    
+    for (let i = 1; i <= circleCount; i++) {
+      const currentRadius = (radius * i) / circleCount;
+      const animatedRadius = currentRadius + Math.sin(time + i) * 2;
+
+      // 绘制圆形
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, animatedRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = `${colors.secondary}40`;
+      ctx.lineWidth = 1 / zoomLevel;
+      ctx.stroke();
+
+      // 绘制刻度
+      for (let angle = 0; angle < 360; angle += 30) {
+        const radian = (angle * Math.PI) / 180;
+        const markLength = angle % 90 === 0 ? 8 : 4;
+
+        ctx.beginPath();
+        ctx.moveTo(
+          centerX + animatedRadius * Math.cos(radian),
+          centerY + animatedRadius * Math.sin(radian)
+        );
+        ctx.lineTo(
+          centerX + (animatedRadius - markLength) * Math.cos(radian),
+          centerY + (animatedRadius - markLength) * Math.sin(radian)
+        );
+        ctx.strokeStyle = `${colors.secondary}80`;
+        ctx.stroke();
+      }
+    }
+
+    // 绘制历史轨迹
+    if (showReferencePoints && positionHistory.current.length > 1) {
+      ctx.beginPath();
+      const first = positionHistory.current[0];
+      ctx.moveTo(first.x, first.y);
+      
+      positionHistory.current.slice(1).forEach((point) => {
+        ctx.lineTo(point.x, point.y);
+      });
+
+      ctx.strokeStyle = `${colors.accent}40`;
+      ctx.lineWidth = 1 / zoomLevel;
+      ctx.stroke();
+    }
+
+    // 绘制当前位置
+    ctx.beginPath();
+    ctx.arc(
+      currentPosition.x,
+      currentPosition.y,
+      pointSize / zoomLevel,
+      0,
+      Math.PI * 2
+    );
+    ctx.fillStyle = colors.primary;
+    ctx.fill();
+
+    // 绘制参考线
+    if (showMeasurements) {
+      ctx.setLineDash([4 / zoomLevel, 4 / zoomLevel]);
+      ctx.beginPath();
+      ctx.moveTo(currentPosition.x, centerY);
+      ctx.lineTo(currentPosition.x, currentPosition.y);
+      ctx.moveTo(centerX, currentPosition.y);
+      ctx.lineTo(currentPosition.x, currentPosition.y);
+      ctx.strokeStyle = `${colors.accent}80`;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 绘制坐标值
+      ctx.font = `${12 / zoomLevel}px monospace`;
+      ctx.fillStyle = colors.text;
+      ctx.fillText(
+        `X: ${(currentPosition.x - centerX).toFixed(1)}`,
+        currentPosition.x + 8 / zoomLevel,
+        currentPosition.y - 8 / zoomLevel
+      );
+      ctx.fillText(
+        `Y: ${(currentPosition.y - centerY).toFixed(1)}`,
+        currentPosition.x + 8 / zoomLevel,
+        currentPosition.y + 16 / zoomLevel
+      );
+    }
+
+    // 绘制十字准线
+    if (showCrosshair) {
+      ctx.beginPath();
+      ctx.moveTo(centerX - radius, centerY);
+      ctx.lineTo(centerX + radius, centerY);
+      ctx.moveTo(centerX, centerY - radius);
+      ctx.lineTo(centerX, centerY + radius);
+      ctx.strokeStyle = crosshairColor;
+      ctx.lineWidth = 1 / zoomLevel;
+      ctx.stroke();
+
+      // 绘制中心点
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 2 / zoomLevel, 0, Math.PI * 2);
+      ctx.fillStyle = crosshairColor;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }, [
+    canvasSize,
+    colors,
+    currentPosition,
+    crosshairColor,
+    radius,
+    circleCount,
+    pointSize,
+    showMeasurements,
+    showCrosshair,
+    showReferencePoints,
+    zoomLevel,
+    panOffset,
+    animationSpeed,
+  ]);
+
+  // 动画循环
+  useEffect(() => {
+    let animationFrame: number;
+    let lastDrawTime = 0;
+    const frameInterval = 1000 / 60; // 60 FPS
+
+    const animate = (timestamp: number) => {
+      if (timestamp - lastDrawTime >= frameInterval) {
+        draw();
+        calculateStats();
+        lastDrawTime = timestamp;
+      }
+      animationFrame = requestAnimationFrame(animate);
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [draw, calculateStats]);
+
+  // 导出功能
+  const handleExport = useCallback(
+    async (format: "png" | "json") => {
+      try {
+        if (format === "png") {
+          const canvas = canvasRef.current;
+          if (!canvas) throw new Error("Canvas not found");
+
+          const dataUrl = canvas.toDataURL("image/png");
+          const link = document.createElement("a");
+          link.download = "target-diagram.png";
+          link.href = dataUrl;
+          link.click();
+        } else {
+          const data = {
+            currentPosition,
+            stats,
+            history: positionHistory.current,
+            settings: {
+              radius,
+              zoomLevel,
+              panOffset,
+            },
+          };
+
+          const blob = new Blob([JSON.stringify(data, null, 2)], {
+            type: "application/json",
+          });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.download = "target-data.json";
+          link.href = url;
+          link.click();
+          URL.revokeObjectURL(url);
+        }
+
+        toast({
+          title: "导出成功",
+          description: `已导出为${format.toUpperCase()}格式`,
+        });
+      } catch (error) {
+        toast({
+          title: "导出失败",
+          description: error instanceof Error ? error.message : "未知错误",
+          variant: "destructive",
+        });
+      }
+    },
+    [currentPosition, stats, radius, zoomLevel, panOffset]
+  );
+
+  // 切换全屏
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen((prev) => !prev);
+  }, []);
+
+  // 重置数据
+  const handleReset = useCallback(() => {
     positionHistory.current = [];
+    setPanOffset({ x: 0, y: 0 });
+    setZoomLevel(1);
     setStats({
       distance: 0,
       maxDeviation: 0,
@@ -153,318 +403,180 @@ export function TargetDiagram({
     });
     toast({
       title: "重置成功",
-      description: "统计数据已重置",
-      variant: "default",
+      description: "所有数据已重置",
     });
-  };
+  }, []);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Support high resolution with anti-aliasing
-    const context = canvas.getContext("2d", {
-      alpha: true,
-      desynchronized: true,
-      willReadFrequently: false,
-    });
-    if (!context) return;
-
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = canvasSize.width * ratio;
-    canvas.height = canvasSize.height * ratio;
-    canvas.style.width = `${canvasSize.width}px`;
-    canvas.style.height = `${canvasSize.height}px`;
-    context.scale(ratio, ratio);
-
-    // Enable anti-aliasing
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-
-    let animationFrame: number;
-    let lastTime = 0;
-    const frameRate = 60;
-    const frameInterval = 1000 / frameRate;
-
-    const drawFrame = (timestamp: number) => {
-      const deltaTime = timestamp - lastTime;
-
-      if (deltaTime < frameInterval) {
-        animationFrame = requestAnimationFrame(drawFrame);
-        return;
-      }
-
-      lastTime = timestamp - (deltaTime % frameInterval);
-
-      // Clear canvas with optimized method
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = colors.background;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-
-      const centerX = canvas.width / (2 * ratio);
-      const centerY = canvas.height / (2 * ratio);
-
-      // Draw historical trajectory
-      if (positionHistory.current.length > 1) {
-        context.beginPath();
-        context.moveTo(
-          centerX + positionHistory.current[0].x,
-          centerY + positionHistory.current[0].y
-        );
-        for (let i = 1; i < positionHistory.current.length; i++) {
-          context.lineTo(
-            centerX + positionHistory.current[i].x,
-            centerY + positionHistory.current[i].y
-          );
-        }
-        context.strokeStyle = `${colors.accent}40`;
-        context.lineWidth = 1;
-        context.stroke();
-      }
-
-      // Calculate dynamic scale based on currentPosition
-      const maxOffset = Math.max(
-        Math.abs(currentPosition.x),
-        Math.abs(currentPosition.y)
-      );
-      const dynamicRadius = Math.max(radius, maxOffset / (canvas.width / 4));
-
-      // Draw dynamic concentric circles with reticle marks
-      const time = Date.now() * 0.001 * animationSpeed;
-      for (let i = 1; i <= circleCount; i++) {
-        const currentRadius =
-          (dynamicRadius * i * canvas.width) / (2 * circleCount) +
-          Math.sin(time + i) * 2;
-
-        // Draw circle
-        context.beginPath();
-        context.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
-        context.strokeStyle = "#FFFFFF40";
-        context.lineWidth = 1;
-        context.stroke();
-
-        // Draw reticle marks on circles
-        for (let angle = 0; angle < 360; angle += 45) {
-          const radian = (angle * Math.PI) / 180;
-          const markLength = angle % 90 === 0 ? 10 : 5;
-
-          context.beginPath();
-          context.moveTo(
-            centerX + currentRadius * Math.cos(radian),
-            centerY + currentRadius * Math.sin(radian)
-          );
-          context.lineTo(
-            centerX + (currentRadius - markLength) * Math.cos(radian),
-            centerY + (currentRadius - markLength) * Math.sin(radian)
-          );
-          context.strokeStyle = "#FFFFFF80";
-          context.lineWidth = 1;
-          context.stroke();
-        }
-      }
-
-      // Draw calibrated crosshair
-      const drawCalibratedLine = (
-        start: number,
-        end: number,
-        isVertical: boolean
-      ) => {
-        const step = 10;
-        const majorTickInterval = 50;
-
-        for (let pos = start; pos <= end; pos += step) {
-          const isMajorTick = pos % majorTickInterval === 0;
-          const tickLength = isMajorTick ? 8 : 4;
-
-          context.beginPath();
-          if (isVertical) {
-            context.moveTo(centerX - tickLength, pos);
-            context.lineTo(centerX + tickLength, pos);
-            if (isMajorTick && pos !== centerY) {
-              context.fillStyle = "#FFFFFF80";
-              context.textAlign = "left";
-              context.fillText(
-                `${Math.abs(pos - centerY)}`,
-                centerX + tickLength + 2,
-                pos + 4
-              );
-            }
-          } else {
-            context.moveTo(pos, centerY - tickLength);
-            context.lineTo(pos, centerY + tickLength);
-            if (isMajorTick && pos !== centerX) {
-              context.fillStyle = "#FFFFFF80";
-              context.textAlign = "center";
-              context.fillText(
-                `${Math.abs(pos - centerX)}`,
-                pos,
-                centerY + tickLength + 12
-              );
-            }
-          }
-          context.strokeStyle = "#FFFFFF80";
-          context.lineWidth = isMajorTick ? 1.5 : 1;
-          context.stroke();
-        }
-
-        // Draw main crosshair lines
-        context.beginPath();
-        if (isVertical) {
-          context.moveTo(centerX, start);
-          context.lineTo(centerX, end);
-        } else {
-          context.moveTo(start, centerY);
-          context.lineTo(end, centerY);
-        }
-        context.strokeStyle = "#FFFFFF";
-        context.lineWidth = 1;
-        context.stroke();
-      };
-
-      // Draw crosshair with calibration
-      drawCalibratedLine(0, canvasSize.width, false);
-      drawCalibratedLine(0, canvasSize.height, true);
-
-      // Draw dynamic current position with pulse effect
-      const pulseSize = pointSize + Math.sin(time * 4) * 2;
-      context.beginPath();
-      context.arc(
-        centerX + currentPosition.x,
-        centerY + currentPosition.y,
-        pulseSize,
-        0,
-        Math.PI * 2
-      );
-      context.fillStyle = colors.accent;
-      context.fill();
-
-      // Draw position indicator lines
-      context.setLineDash([2, 2]);
-      context.beginPath();
-      context.moveTo(centerX + currentPosition.x, centerY);
-      context.lineTo(centerX + currentPosition.x, centerY + currentPosition.y);
-      context.moveTo(centerX, centerY + currentPosition.y);
-      context.lineTo(centerX + currentPosition.x, centerY + currentPosition.y);
-      context.strokeStyle = `${colors.accent}80`;
-      context.lineWidth = 1;
-      context.stroke();
-      context.setLineDash([]);
-
-      calculateStats();
-      animationFrame = requestAnimationFrame(drawFrame);
-    };
-
-    drawFrame(0);
-
-    return () => cancelAnimationFrame(animationFrame);
-  }, [
-    radius,
-    currentPosition,
-    colors,
-    animationSpeed,
-    circleCount,
-    crosshairColor,
-    pointSize,
-    canvasSize,
-    calculateStats,
-  ]);
+  // 工具栏按钮配置
+  const toolbarButtons = useMemo(
+    () => [
+      {
+        icon: isFullscreen ? Minimize : Maximize,
+        label: isFullscreen ? "退出全屏" : "全屏显示",
+        onClick: toggleFullscreen,
+      },
+      {
+        icon: Eye,
+        label: showMeasurements ? "隐藏测量" : "显示测量",
+        onClick: () => setShowMeasurements((prev) => !prev),
+      },
+      {
+        icon: Crosshair,
+        label: showCrosshair ? "隐藏准线" : "显示准线",
+        onClick: () => setShowCrosshair((prev) => !prev),
+      },
+      {
+        icon: Move,
+        label: isDragging ? "停止拖动" : "开始拖动",
+        onClick: () => setIsDragging((prev) => !prev),
+      },
+      {
+        icon: Eye,
+        label: showReferencePoints ? "隐藏参考点" : "显示参考点",
+        onClick: () => setShowReferencePoints((prev) => !prev),
+      },
+    ],
+    [
+      isFullscreen,
+      showMeasurements,
+      showCrosshair,
+      isDragging,
+      showReferencePoints,
+      toggleFullscreen,
+    ]
+  );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5 }}
-      className="flex flex-col md:flex-row gap-2 rounded-lg"
-    >
-      <div className="relative flex-shrink-0 flex flex-col items-center">
-        <canvas
-          ref={canvasRef}
-          width={canvasSize.width}
-          height={canvasSize.height}
-          className="rounded-md border border-gray-700 mb-2"
-        />
-        <PeakChart />
-        {showInfo && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="重置"
-                className="h-6 w-6"
-              >
-                <RefreshCw className="h-3 w-3 text-white" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>确认重置统计数据？</AlertDialogTitle>
-                <AlertDialogDescription>
-                  此操作将清除所有历史数据，且无法恢复。
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction onClick={handleReset}>
-                  确认
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
-      </div>
-
-      <div className="flex flex-row md:flex-col gap-2 flex-1 min-w-0">
-        {showStats && (
-          <Card className=" flex-1">
-            <CardContent className="p-2">
-              <div className="grid grid-cols-3 md:grid-cols-1 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-500">距离</span>
-                  <div className="font-medium text-gray-300">
-                    {stats.distance.toFixed(2)} px
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-500">最大偏差</span>
-                  <div className="font-medium text-gray-300">
-                    {stats.maxDeviation.toFixed(2)} px
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-500">平均偏差</span>
-                  <div className="font-medium text-gray-300">
-                    {stats.avgDeviation.toFixed(2)} px
-                  </div>
-                </div>
+    <TooltipProvider>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.3 }}
+        className={`relative ${
+          isFullscreen
+            ? "fixed inset-0 z-50 bg-background"
+            : "w-full rounded-lg"
+        }`}
+      >
+        <Card className="h-full border-0 shadow-lg">
+          <CardHeader className="px-4 py-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg">目标跟踪</CardTitle>
+                <CardDescription>实时监控导星目标位置</CardDescription>
               </div>
-            </CardContent>
-          </Card>
-        )}
+              <div className="flex items-center space-x-2">
+                {toolbarButtons.map(({ icon: Icon, label, onClick }, i) => (
+                  <Tooltip key={i}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={onClick}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{label}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
+          </CardHeader>
 
-        {enableExport && (
-          <div className="flex flex-row md:flex-col gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportImage}
-              className="flex-1 h-8"
-            >
-              <Download className="h-3 w-3 mr-1" />
-              导出图像
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportData}
-              className="flex-1 h-8"
-            >
-              <FileJson className="h-3 w-3 mr-1" />
-              导出数据
-            </Button>
-          </div>
-        )}
-      </div>
-    </motion.div>
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative flex-grow">
+                <canvas
+                  ref={canvasRef}
+                  className="w-full rounded-lg border border-border bg-background touch-none"
+                  onPointerDown={(e) => {
+                    setIsDragging(true);
+                    setDragStart({ x: e.clientX, y: e.clientY });
+                  }}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={() => setIsDragging(false)}
+                  onPointerLeave={() => setIsDragging(false)}
+                  onWheel={(e) => {
+                    e.preventDefault();
+                    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+                    handleZoom(factor);
+                  }}
+                />
+
+                <AnimatePresence>
+                  {showStats && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute bottom-2 right-2 flex gap-2"
+                    >
+                      <Badge variant="outline" className="text-xs">
+                        距离: {stats.distance.toFixed(1)}px
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        最大偏差: {stats.maxDeviation.toFixed(1)}px
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        平均偏差: {stats.avgDeviation.toFixed(1)}px
+                      </Badge>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {showInfo && <PeakChart />}
+            </div>
+
+            {enableExport && (
+              <div className="flex justify-end space-x-2 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExport("png")}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  导出图像
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExport("json")}
+                >
+                  <FileJson className="h-4 w-4 mr-2" />
+                  导出数据
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <RotateCw className="h-4 w-4 mr-2" />
+                      重置
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>确认重置数据？</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        此操作将清除所有历史数据，且无法恢复。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleReset}>
+                        确认
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+    </TooltipProvider>
   );
 }

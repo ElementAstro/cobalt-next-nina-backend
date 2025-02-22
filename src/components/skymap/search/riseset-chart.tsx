@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -9,8 +9,20 @@ import {
   Tooltip,
   ReferenceLine,
   Brush,
+  ReferenceArea,
+  TooltipProps,
 } from "recharts";
 import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  TooltipProvider,
+  Tooltip as UITooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import { ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
 
 interface RiseSetChartProps {
   riseTime: string;
@@ -27,48 +39,93 @@ interface RiseSetChartProps {
   animationDuration?: number;
 }
 
+interface DataPoint {
+  time: string;
+  altitude: number;
+  phase: "rising" | "transit" | "setting";
+}
+
+type CustomTooltipProps = TooltipProps<number, string> & {
+  payload?: Array<{
+    payload: DataPoint;
+    value: number;
+  }>;
+};
+
 export function RiseSetChart({
   riseTime,
   setTime,
   transitTime,
   transitAltitude,
   chartHeight = 300,
-  lineColor = "#3b82f6",
-  gridColor = "#374151",
-  axisColor = "#9ca3af",
-  backgroundColor = "rgba(255, 255, 255, 0.05)",
+  lineColor = "hsl(var(--primary))",
+  gridColor = "hsl(var(--border))",
+  axisColor = "hsl(var(--muted-foreground))",
+  backgroundColor = "hsl(var(--background))",
   showReferenceLines = true,
   enableZoom = false,
   animationDuration = 0.5,
 }: RiseSetChartProps) {
-  // Generate more detailed data points for smoother curve
-  const generateDataPoints = () => {
-    const points = [];
-    const riseDate = new Date(`2000/01/01 ${riseTime}`);
-    const setDate = new Date(`2000/01/01 ${setTime}`);
-    const transitDate = new Date(`2000/01/01 ${transitTime}`);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [brushDomain, setBrushDomain] = useState<[number, number] | null>(null);
 
-    for (let i = 0; i <= 24; i++) {
-      const time = new Date(
-        riseDate.getTime() + (i * (setDate.getTime() - riseDate.getTime())) / 24
-      );
+  // 生成平滑的数据点
+  const generateDataPoints = useCallback((): DataPoint[] => {
+    const points: DataPoint[] = [];
+    const dataPointCount = 48; // 每30分钟一个数据点
+
+    const parseTimeString = (timeStr: string) => {
+      const [hours, minutes] = timeStr.split(":").map(Number);
+      return new Date(2000, 0, 1, hours, minutes);
+    };
+
+    const riseDate = parseTimeString(riseTime);
+    const setDate = parseTimeString(setTime);
+    const transitDate = parseTimeString(transitTime);
+
+    // 确保时间序列正确
+    if (setDate.getTime() < riseDate.getTime()) {
+      setDate.setDate(setDate.getDate() + 1);
+    }
+    if (transitDate.getTime() < riseDate.getTime()) {
+      transitDate.setDate(transitDate.getDate() + 1);
+    }
+
+    const timeStep = (setDate.getTime() - riseDate.getTime()) / dataPointCount;
+
+    for (let i = 0; i <= dataPointCount; i++) {
+      const currentTime = new Date(riseDate.getTime() + i * timeStep);
       const altitude = calculateAltitude(
-        time,
+        currentTime,
         riseDate,
         transitDate,
         setDate,
         transitAltitude
       );
+
+      let phase: "rising" | "transit" | "setting";
+      if (currentTime < transitDate) {
+        phase = "rising";
+      } else if (currentTime.getTime() === transitDate.getTime()) {
+        phase = "transit";
+      } else {
+        phase = "setting";
+      }
+
       points.push({
-        time: time.toLocaleTimeString("en-US", {
+        time: currentTime.toLocaleTimeString("zh-CN", {
           hour: "2-digit",
           minute: "2-digit",
         }),
         altitude: Math.max(0, altitude),
+        phase,
       });
     }
+
     return points;
-  };
+  }, [riseTime, setTime, transitTime, transitAltitude]);
 
   const calculateAltitude = (
     current: Date,
@@ -77,144 +134,262 @@ export function RiseSetChart({
     set: Date,
     maxAlt: number
   ): number => {
-    // Convert all times to minutes since midnight for easier calculation
-    const getMinutes = (date: Date) => date.getHours() * 60 + date.getMinutes();
+    const getMinutes = (date: Date) =>
+      date.getHours() * 60 + date.getMinutes();
 
     const currentMin = getMinutes(current);
     const riseMin = getMinutes(rise);
     const transitMin = getMinutes(transit);
     const setMin = getMinutes(set);
 
-    // If current time is outside rise-set period, return 0
     if (currentMin < riseMin || currentMin > setMin) {
       return 0;
     }
 
-    // Calculate position in the arc (0 to 1)
     let position;
     if (currentMin <= transitMin) {
-      // Rising phase
       position = (currentMin - riseMin) / (transitMin - riseMin);
     } else {
-      // Setting phase
       position = 1 - (currentMin - transitMin) / (setMin - transitMin);
     }
 
-    // Use sine function to create smooth curve
     return maxAlt * Math.sin((position * Math.PI) / 2);
   };
 
-  const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const data = useMemo(() => generateDataPoints(), [generateDataPoints]);
 
-  const handleWheel = (e: React.WheelEvent) => {
-    if (enableZoom) {
-      const delta = e.deltaY * -0.01;
-      const newZoom = Math.min(Math.max(0.5, zoom + delta), 3);
-      setZoom(newZoom);
-    }
+  const handleZoomIn = () => {
+    setZoom((prev) => Math.min(prev * 1.2, 3));
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (enableZoom && e.buttons === 1) {
-      setOffset({
-        x: offset.x + e.movementX,
-        y: offset.y + e.movementY,
-      });
-    }
+  const handleZoomOut = () => {
+    setZoom((prev) => Math.max(prev / 1.2, 0.5));
   };
 
-  const containerStyle = enableZoom
-    ? {
-        transform: `scale(${zoom}) translate(${offset.x}px, ${offset.y}px)`,
-        transformOrigin: "center",
+  const handleReset = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setBrushDomain(null);
+  };
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (enableZoom && e.button === 0) {
+        setIsPanning(true);
       }
-    : {};
+    },
+    [enableZoom]
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (isPanning) {
+        setPan((prev) => ({
+          x: prev.x + e.movementX,
+          y: prev.y + e.movementY,
+        }));
+      }
+    },
+    [isPanning]
+  );
+
+  const handleMouseUp = () => {
+    setIsPanning(false);
+  };
+
+  const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+    if (active && payload && payload.length > 0) {
+      const data = payload[0].payload;
+      return (
+        <Card className="bg-background/95 backdrop-blur-sm p-3">
+          <div className="space-y-1">
+            <div className="font-medium">{label}</div>
+            <div className="text-sm text-muted-foreground">
+              高度: {Math.round(data.altitude)}°
+            </div>
+            <Badge
+              variant={
+                data.phase === "transit"
+                  ? "default"
+                  : data.phase === "rising"
+                  ? "secondary"
+                  : "outline"
+              }
+            >
+              {data.phase === "transit"
+                ? "最高点"
+                : data.phase === "rising"
+                ? "上升"
+                : "下降"}
+            </Badge>
+          </div>
+        </Card>
+      );
+    }
+    return null;
+  };
+
+  const handleBrushChange = useCallback(
+    ({ startIndex, endIndex }: { startIndex?: number; endIndex?: number }) => {
+      if (typeof startIndex === 'number' && typeof endIndex === 'number') {
+        setBrushDomain([startIndex, endIndex]);
+      }
+    },
+    []
+  );
 
   return (
     <motion.div
-      onWheel={handleWheel}
-      onMouseMove={handleMouseMove}
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       transition={{ duration: animationDuration }}
-      className="w-full overflow-hidden rounded-lg bg-background/5 backdrop-blur-sm"
-      style={containerStyle}
+      className="w-full relative"
+      style={{
+        transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
+      }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
-      <ResponsiveContainer width="100%" height={chartHeight} minHeight={200}>
-        <LineChart
-          data={generateDataPoints()}
-          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-        >
-          <defs>
-            <linearGradient id="altitudeGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={lineColor} stopOpacity={0.8} />
-              <stop offset="95%" stopColor={lineColor} stopOpacity={0.2} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-          <XAxis
-            dataKey="time"
-            stroke={axisColor}
-            tick={{ fill: axisColor }}
-            allowDataOverflow={enableZoom}
-          />
-          <YAxis
-            domain={[0, 90]}
-            stroke={axisColor}
-            tick={{ fill: axisColor }}
-            allowDataOverflow={enableZoom}
-          />
-          {showReferenceLines && (
-            <>
-              <ReferenceLine
-                y={transitAltitude}
-                stroke={axisColor}
-                strokeDasharray="5 5"
-                label={{
-                  value: "Transit",
-                  position: "insideTopRight",
-                  fill: axisColor,
-                }}
-              />
-              <ReferenceLine
-                y={0}
-                stroke={axisColor}
-                strokeDasharray="5 5"
-                label={{
-                  value: "Horizon",
-                  position: "insideBottomRight",
-                  fill: axisColor,
-                }}
-              />
-            </>
-          )}
-          <Tooltip
-            contentStyle={{
-              backgroundColor: backgroundColor,
-              border: `1px solid ${gridColor}`,
-              borderRadius: "0.375rem",
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey="altitude"
-            stroke="url(#altitudeGradient)"
-            strokeWidth={2}
-            dot={false}
-            animationDuration={animationDuration * 1000}
-          />
+      <Card className="bg-background/60 backdrop-blur-sm border-border/50">
+        <div className="p-4">
           {enableZoom && (
-            <Brush
-              dataKey="time"
-              height={30}
-              stroke={axisColor}
-              fill={backgroundColor}
-              travellerWidth={10}
-            />
+            <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+              <TooltipProvider>
+                <UITooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleZoomIn}
+                    >
+                      <ZoomIn className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>放大</TooltipContent>
+                </UITooltip>
+
+                <UITooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleZoomOut}
+                    >
+                      <ZoomOut className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>缩小</TooltipContent>
+                </UITooltip>
+
+                <UITooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleReset}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>重置</TooltipContent>
+                </UITooltip>
+              </TooltipProvider>
+            </div>
           )}
-        </LineChart>
-      </ResponsiveContainer>
+
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <LineChart
+              data={data}
+              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke={gridColor}
+                opacity={0.5}
+              />
+              <XAxis
+                dataKey="time"
+                stroke={axisColor}
+                tick={{ fill: axisColor }}
+              />
+              <YAxis
+                domain={[0, 90]}
+                stroke={axisColor}
+                tick={{ fill: axisColor }}
+                label={{
+                  value: "高度 (°)",
+                  position: "insideLeft",
+                  angle: -90,
+                  style: { fill: axisColor },
+                }}
+              />
+              {showReferenceLines && (
+                <>
+                  <ReferenceLine
+                    y={transitAltitude}
+                    stroke={axisColor}
+                    strokeDasharray="5 5"
+                    label={{
+                      value: "最高点",
+                      position: "right",
+                      fill: axisColor,
+                    }}
+                  />
+                  <ReferenceLine
+                    y={0}
+                    stroke={axisColor}
+                    strokeDasharray="5 5"
+                    label={{
+                      value: "地平线",
+                      position: "right",
+                      fill: axisColor,
+                    }}
+                  />
+                </>
+              )}
+              <Tooltip content={<CustomTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="altitude"
+                stroke={lineColor}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{
+                  r: 6,
+                  fill: backgroundColor,
+                  stroke: lineColor,
+                  strokeWidth: 2,
+                }}
+                animationDuration={animationDuration * 1000}
+              />
+              {enableZoom && (
+                <Brush
+                  dataKey="time"
+                  height={30}
+                  stroke={axisColor}
+                  fill={backgroundColor}
+                  onChange={handleBrushChange}
+                />
+              )}
+              {brushDomain && (
+                <ReferenceArea
+                  x1={data[brushDomain[0]].time}
+                  x2={data[brushDomain[1]].time}
+                  strokeOpacity={0.3}
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+
+          <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+            <div>升起: {riseTime}</div>
+            <div>最高点: {transitTime}</div>
+            <div>落下: {setTime}</div>
+          </div>
+        </div>
+      </Card>
     </motion.div>
   );
 }

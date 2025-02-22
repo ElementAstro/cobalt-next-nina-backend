@@ -1,498 +1,317 @@
 "use client";
 
-import {
-  ResponsiveContainer,
-  BarChart,
-  LineChart,
-  Bar,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ReferenceLine,
-  CartesianGrid,
-  Legend,
-} from "recharts";
-import { TimelineData } from "@/types/sequencer";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Play,
   Pause,
+  Square,
   RefreshCw,
-  Settings,
+  Lightbulb,
+  BarChart3,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useState } from "react";
 import { useSequencerStore } from "@/stores/sequencer";
+import type { TimelinePoint } from "@/stores/sequencer";
 
-interface TimelineGraphProps {
-  data: TimelineData[];
-  height: number;
-  showLineChart?: boolean;
-  colors?: string[];
-  showGrid?: boolean;
-  gridStroke?: string;
-  gridStrokeDasharray?: string;
-  showLegend?: boolean;
-  legendPosition?: "top" | "bottom";
-  axisLabels?: {
-    x?: string;
-    y?: string;
-  };
-  showMarkers?: boolean;
-  markerSize?: number;
-  markerStroke?: string;
-  markerFill?: string;
-  zoomable?: boolean;
-  panable?: boolean;
-  animationDuration?: number;
-  animationEasing?: "ease" | "ease-in" | "ease-out" | "ease-in-out" | "linear";
-  hoverAnimation?: boolean;
-  hoverAnimationDuration?: number;
-  showControls?: boolean;
-  controlIcons?: {
-    play?: boolean;
-    pause?: boolean;
-    refresh?: boolean;
-    settings?: boolean;
-    zoomIn?: boolean;
-    zoomOut?: boolean;
-  };
-  onControlClick?: (action: string) => void;
+interface ChartData {
+  points: { x: number; y: number }[];
+  min: number;
+  max: number;
+  current: number;
 }
 
-const defaultProps: Partial<TimelineGraphProps> = {
-  showLineChart: false,
-  colors: ["#82ca9d", "#8884d8", "#ffc658"],
-  showGrid: true,
-  gridStroke: "#333",
-  gridStrokeDasharray: "3 3",
-  showLegend: true,
-  legendPosition: "bottom",
-  axisLabels: {
-    x: "时间",
-    y: "亮度",
-  },
-  showMarkers: false,
-  markerSize: 4,
-  markerStroke: "#fff",
-  markerFill: "#666",
-  zoomable: true,
-  panable: true,
-  animationDuration: 1000,
-  animationEasing: "ease-in-out",
-  hoverAnimation: true,
-  hoverAnimationDuration: 300,
-  showControls: true,
-  controlIcons: {
-    play: true,
-    pause: true,
-    refresh: true,
-    settings: true,
-    zoomIn: true,
-    zoomOut: true,
-  },
-};
+interface ChartDimensions {
+  width: number;
+  height: number;
+  padding: number;
+}
 
-export function TimelineGraph(props: TimelineGraphProps) {
-  const mergedProps = { ...defaultProps, ...props };
-  const { timeline, isRunning, startSequence, pauseSequence, stopSequence } =
-    useSequencerStore();
+export function TimelineGraph() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [chartData, setChartData] = useState<ChartData>({
+    points: [],
+    min: 0,
+    max: 100,
+    current: 0,
+  });
+  const [dimensions, setDimensions] = useState<ChartDimensions>({
+    width: 800,
+    height: 300,
+    padding: 20,
+  });
+  const [zoom, setZoom] = useState(1);
 
-  const formattedData = timeline.map((item, index) => {
-    const dataPoint: { hour: string; [key: string]: number | string } = {
-      hour: `${index}:00`,
-    };
-    if (Array.isArray(item.value)) {
-      item.value.forEach((val, i) => {
-        dataPoint[`value${i}`] = val;
+  const {
+    timeline,
+    isRunning,
+    startSequence,
+    pauseSequence,
+    stopSequence,
+  } = useSequencerStore();
+
+  useEffect(() => {
+    const processTimelineData = () => {
+      if (!timeline.length) return;
+
+      const points = timeline.map((point: TimelinePoint, index: number) => ({
+        x: index,
+        y: Array.isArray(point.value) ? point.value[0] : point.value,
+      }));
+
+      const values = points.map((p) => p.y);
+      setChartData({
+        points,
+        min: Math.min(...values),
+        max: Math.max(...values),
+        current: values[values.length - 1] || 0,
       });
-    } else {
-      dataPoint.value = item.value;
-    }
-    return dataPoint;
-  });
+    };
 
-  const getAnimationProps = (index: number) => ({
-    isAnimationActive: true,
-    animationDuration: mergedProps.animationDuration,
-    animationEasing: mergedProps.animationEasing,
-    ...(mergedProps.hoverAnimation && {
-      onMouseEnter: () => {
-        const element = document.getElementById(`chart-element-${index}`);
-        if (element) {
-          element.style.transition = `all ${mergedProps.hoverAnimationDuration}ms ease`;
-          element.style.transform = "scale(1.05)";
-          element.style.filter = "brightness(1.2)";
+    processTimelineData();
+  }, [timeline]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !chartData.points.length) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const drawChart = () => {
+      const { width, height, padding } = dimensions;
+      const { points, min, max } = chartData;
+
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw grid
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 10; i++) {
+        const y = padding + ((height - 2 * padding) * i) / 10;
+        ctx.beginPath();
+        ctx.moveTo(padding, y);
+        ctx.lineTo(width - padding, y);
+        ctx.stroke();
+      }
+
+      // Draw line
+      ctx.strokeStyle = "#14b8a6"; // teal-500
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        const x = padding + ((width - 2 * padding) * index) / (points.length - 1);
+        const y =
+          height -
+          padding -
+          ((height - 2 * padding) * (point.y - min)) / (max - min);
+        if (index === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
         }
-      },
-      onMouseLeave: () => {
-        const element = document.getElementById(`chart-element-${index}`);
-        if (element) {
-          element.style.transition = `all ${mergedProps.hoverAnimationDuration}ms ease`;
-          element.style.transform = "scale(1)";
-          element.style.filter = "brightness(1)";
-        }
-      },
-    }),
-  });
+      });
+      ctx.stroke();
 
-  const chartVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.8, ease: "easeInOut" },
-    },
-  };
+      // Draw points
+      points.forEach((point, index) => {
+        const x = padding + ((width - 2 * padding) * index) / (points.length - 1);
+        const y =
+          height -
+          padding -
+          ((height - 2 * padding) * (point.y - min)) / (max - min);
 
-  const now = new Date();
-  const currentHour = now.getHours() + now.getMinutes() / 60;
-  const currentHourLabel = `${Math.floor(currentHour)}:00`;
+        ctx.fillStyle = "#14b8a6";
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    };
 
-  const [zoomLevel, setZoomLevel] = useState(1);
+    drawChart();
+  }, [chartData, dimensions, zoom]);
 
-  const handleControlClick = (action: string) => {
-    switch (action) {
-      case "play":
-        if (!isRunning) startSequence();
-        break;
-      case "pause":
-        if (isRunning) pauseSequence();
-        break;
-      case "stop":
-        stopSequence();
-        break;
-      case "zoomIn":
-        setZoomLevel((prev) => prev + 0.1);
-        break;
-      case "zoomOut":
-        setZoomLevel((prev) => Math.max(0.5, prev - 0.1));
-        break;
-      // other controls can be added here
-      default:
-        break;
-    }
-    if (mergedProps.onControlClick) mergedProps.onControlClick(action);
-  };
+  useEffect(() => {
+    const handleResize = () => {
+      const container = canvasRef.current?.parentElement;
+      if (!container) return;
 
-  const chartContainerStyle = {
-    transform: `scale(${zoomLevel})`,
-    transformOrigin: "top left",
-    transition: "transform 0.2s ease",
-  };
+      setDimensions({
+        width: container.clientWidth,
+        height: 300,
+        padding: 20,
+      });
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const handleZoomIn = () => setZoom((prev) => Math.min(prev * 1.2, 3));
+  const handleZoomOut = () => setZoom((prev) => Math.max(prev / 1.2, 0.5));
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="bg-gray-900 p-4 rounded-lg shadow-lg relative"
-    >
-      <h2 className="text-lg font-semibold text-white mb-2">时间轴图</h2>
-      {mergedProps.showControls && (
-        <motion.div
-          className="absolute top-2 right-2 flex gap-3 bg-gray-800/50 backdrop-blur-sm p-1.5 rounded-lg"
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          {mergedProps.controlIcons?.play && (
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => handleControlClick("play")}
-              className={`p-1 rounded-full hover:bg-gray-700 cursor-pointer relative group active:scale-95 transition-transform ${
-                isRunning ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-            >
-              <Play className="w-5 h-5 text-gray-300" />
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                播放
-              </div>
-            </motion.div>
-          )}
-          {mergedProps.controlIcons?.pause && (
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => handleControlClick("pause")}
-              className={`p-1 rounded-full hover:bg-gray-700 cursor-pointer relative group active:scale-95 transition-transform ${
-                !isRunning ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-            >
-              <Pause className="w-5 h-5 text-gray-300" />
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                暂停
-              </div>
-            </motion.div>
-          )}
-          {mergedProps.controlIcons?.refresh && (
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => handleControlClick("refresh")}
-              className="p-1 rounded-full hover:bg-gray-700 cursor-pointer relative group active:scale-95 transition-transform"
-            >
-              <RefreshCw className="w-5 h-5 text-gray-300" />
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                刷新
-              </div>
-            </motion.div>
-          )}
-          {mergedProps.controlIcons?.settings && (
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => handleControlClick("settings")}
-              className="p-1 rounded-full hover:bg-gray-700 cursor-pointer relative group active:scale-95 transition-transform"
-            >
-              <Settings className="w-5 h-5 text-gray-300" />
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                设置
-              </div>
-            </motion.div>
-          )}
-          {mergedProps.controlIcons?.zoomIn && (
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => handleControlClick("zoomIn")}
-              className="p-1 rounded-full hover:bg-gray-700 cursor-pointer relative group active:scale-95 transition-transform"
-            >
-              <ZoomIn className="w-5 h-5 text-gray-300" />
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                放大
-              </div>
-            </motion.div>
-          )}
-          {mergedProps.controlIcons?.zoomOut && (
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => handleControlClick("zoomOut")}
-              className="p-1 rounded-full hover:bg-gray-700 cursor-pointer relative group active:scale-95 transition-transform"
-            >
-              <ZoomOut className="w-5 h-5 text-gray-300" />
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                缩小
-              </div>
-            </motion.div>
-          )}
-        </motion.div>
-      )}
-      <motion.div
-        variants={chartVariants}
-        initial="hidden"
-        animate="visible"
-        style={chartContainerStyle}
-      >
-        {zoomLevel !== 1 && (
-          <div className="absolute top-0 left-0 bg-gray-800/50 px-2 py-1 rounded-br text-sm text-gray-300">
-            {Math.round(zoomLevel * 100)}%
+    <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
+      <CardHeader className="space-y-1">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-teal-500" />
+            <CardTitle className="text-xl">序列时间线</CardTitle>
+            {isRunning && (
+              <Badge variant="secondary" className="animate-pulse">
+                运行中
+              </Badge>
+            )}
           </div>
-        )}
-        <ResponsiveContainer width="100%" height={mergedProps.height}>
-          {mergedProps.showLineChart ? (
-            <LineChart
-              data={formattedData}
-              {...(mergedProps.zoomable && { zoomable: true })}
-              {...(mergedProps.panable && { panable: true })}
+          <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleZoomIn}
+                    className="h-8 w-8 p-0"
+                    disabled={zoom >= 3}
+                  >
+                    <ZoomIn className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>放大</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleZoomOut}
+                    className="h-8 w-8 p-0"
+                    disabled={zoom <= 0.5}
+                  >
+                    <ZoomOut className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>缩小</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={isRunning ? pauseSequence : startSequence}
+                    className="h-8"
+                  >
+                    {isRunning ? (
+                      <>
+                        <Pause className="w-4 h-4 mr-2" />
+                        暂停
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" />
+                        开始
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isRunning ? "暂停序列" : "开始序列"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={stopSequence}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Square className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>停止序列</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="relative h-[300px] w-full">
+            <canvas
+              ref={canvasRef}
+              width={dimensions.width}
+              height={dimensions.height}
+              className="absolute inset-0"
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: "left center",
+              }}
+            />
+          </div>
+
+          {timeline.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center justify-center p-8 text-gray-400"
             >
-              {mergedProps.showGrid && (
-                <CartesianGrid
-                  stroke={mergedProps.gridStroke}
-                  strokeDasharray={mergedProps.gridStrokeDasharray}
-                />
-              )}
-              <XAxis
-                dataKey="hour"
-                stroke="#ccc"
-                label={{
-                  value: mergedProps.axisLabels?.x || "",
-                  position: "insideBottom",
-                  offset: -10,
-                }}
-              />
-              <YAxis
-                stroke="#ccc"
-                label={{
-                  value: mergedProps.axisLabels?.y || "",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 10,
-                }}
-              />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    return (
-                      <motion.div
-                        className="bg-gray-800 p-3 rounded-lg shadow-lg border border-gray-700"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <p className="text-sm text-gray-300">{label}</p>
-                        {payload.map((item, i) => (
-                          <div key={i} className="flex items-center gap-2 mt-1">
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: item.color }}
-                            />
-                            <p className="text-sm text-gray-200">
-                              {item.name}: {item.value}
-                            </p>
-                          </div>
-                        ))}
-                      </motion.div>
-                    );
-                  }
-                  return null;
-                }}
-                cursor={{ fill: "rgba(255,255,255,0.1)" }}
-              />
-              {mergedProps.showLegend && (
-                <Legend verticalAlign={mergedProps.legendPosition} />
-              )}
-              {Array.isArray(timeline[0]?.value) ? (
-                timeline[0].value.map((_, i) => (
-                  <Line
-                    key={i}
-                    id={`chart-element-${i}`}
-                    type="monotone"
-                    dataKey={`value${i}`}
-                    stroke={
-                      mergedProps.colors?.[i] ||
-                      `hsl(${
-                        (i * 360) /
-                        (Array.isArray(timeline[0]?.value)
-                          ? timeline[0].value.length
-                          : 1)
-                      }, 70%, 50%)`
-                    }
-                    strokeWidth={2}
-                    dot={
-                      mergedProps.showMarkers
-                        ? {
-                            stroke: mergedProps.markerStroke,
-                            fill: mergedProps.markerFill,
-                            r: mergedProps.markerSize,
-                          }
-                        : false
-                    }
-                    {...getAnimationProps(i)}
-                  />
-                ))
-              ) : (
-                <Line
-                  id="chart-element-single"
-                  type="monotone"
-                  dataKey="value"
-                  stroke={mergedProps.colors?.[0] || "#82ca9d"}
-                  strokeWidth={2}
-                  dot={
-                    mergedProps.showMarkers
-                      ? {
-                          stroke: mergedProps.markerStroke,
-                          fill: mergedProps.markerFill,
-                          r: mergedProps.markerSize,
-                        }
-                      : false
-                  }
-                  {...getAnimationProps(0)}
-                />
-              )}
-              <ReferenceLine
-                x={currentHourLabel}
-                stroke="rgb(0, 200, 150)"
-                label={{
-                  value: "现在",
-                  position: "top",
-                  fill: "rgb(0, 200, 150)",
-                }}
-                strokeDasharray="3 3"
-              />
-            </LineChart>
-          ) : (
-            <BarChart
-              data={formattedData}
-              {...(mergedProps.zoomable && { zoomable: true })}
-              {...(mergedProps.panable && { panable: true })}
-            >
-              {mergedProps.showGrid && (
-                <CartesianGrid
-                  stroke={mergedProps.gridStroke}
-                  strokeDasharray={mergedProps.gridStrokeDasharray}
-                />
-              )}
-              <XAxis
-                dataKey="hour"
-                stroke="#ccc"
-                label={{
-                  value: mergedProps.axisLabels?.x || "",
-                  position: "insideBottom",
-                  offset: -10,
-                }}
-              />
-              <YAxis
-                stroke="#ccc"
-                label={{
-                  value: mergedProps.axisLabels?.y || "",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 10,
-                }}
-              />
-              <Tooltip
-                contentStyle={{ backgroundColor: "#1f2937", border: "none" }}
-                itemStyle={{ color: "#fff" }}
-                cursor={{ fill: "rgba(255,255,255,0.1)" }}
-              />
-              {mergedProps.showLegend && (
-                <Legend verticalAlign={mergedProps.legendPosition} />
-              )}
-              {Array.isArray(timeline[0]?.value) ? (
-                timeline[0].value.map((_, i) => (
-                  <Bar
-                    key={i}
-                    id={`chart-element-${i}`}
-                    dataKey={`value${i}`}
-                    fill={
-                      mergedProps.colors?.[i] ||
-                      `hsl(${
-                        (i * 360) /
-                        (Array.isArray(timeline[0]?.value)
-                          ? timeline[0].value.length
-                          : 1)
-                      }, 70%, 50%)`
-                    }
-                    {...getAnimationProps(i)}
-                  />
-                ))
-              ) : (
-                <Bar
-                  id="chart-element-single"
-                  dataKey="value"
-                  fill="#82ca9d"
-                  {...getAnimationProps(0)}
-                />
-              )}
-              <ReferenceLine
-                x={currentHourLabel}
-                stroke="rgb(0, 200, 150)"
-                label={{
-                  value: "现在",
-                  position: "top",
-                  fill: "rgb(0, 200, 150)",
-                }}
-                strokeDasharray="3 3"
-              />
-            </BarChart>
+              <Lightbulb className="w-12 h-12 mb-4 opacity-50" />
+              <p>暂无序列数据</p>
+            </motion.div>
           )}
-        </ResponsiveContainer>
-      </motion.div>
-    </motion.div>
+
+          {isRunning && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center justify-center gap-2 p-2 bg-teal-500/10 border border-teal-500/20 rounded-lg"
+            >
+              <RefreshCw className="w-4 h-4 text-teal-500 animate-spin" />
+              <span className="text-sm text-teal-500">正在更新数据...</span>
+            </motion.div>
+          )}
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-sm text-gray-400">当前值</div>
+              <div className="text-xl font-semibold text-teal-500">
+                {chartData.current.toFixed(2)}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-gray-400">最大值</div>
+              <div className="text-xl font-semibold text-green-500">
+                {chartData.max.toFixed(2)}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-gray-400">最小值</div>
+              <div className="text-xl font-semibold text-blue-500">
+                {chartData.min.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

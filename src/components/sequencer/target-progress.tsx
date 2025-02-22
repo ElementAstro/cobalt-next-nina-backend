@@ -1,8 +1,21 @@
 "use client";
 
-import { Progress } from "@/components/ui/progress";
+import { useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
-import { motion } from "framer-motion";
+import { Progress } from "@/components/ui/progress";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertTriangle,
+  Clock,
+  Pause,
+  Play,
+  RefreshCw,
+  Star,
+  Timer,
+  Target,
+  Waves,
+} from "lucide-react";
 import { useSequencerStore } from "@/stores/sequencer";
 import {
   Tooltip,
@@ -10,92 +23,250 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Clock, AlertTriangle, CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { Target as TargetType, ExposureTask } from "@/stores/sequencer";
 
-export function TargetProgress() {
-  const { targets, activeTargetId, taskStatuses } = useSequencerStore();
+interface TaskProgressProps {
+  completed: number;
+  total: number;
+  type: ExposureTask["type"];
+  status: ExposureTask["status"];
+}
 
-  const activeTarget = targets.find((t) => t.id === activeTargetId);
+const TaskProgress = ({ completed, total, type, status }: TaskProgressProps) => {
+  const getTypeIcon = () => {
+    switch (type) {
+      case "light":
+        return <Star className="w-4 h-4 text-yellow-400" />;
+      case "dark":
+        return <Target className="w-4 h-4 text-blue-400" />;
+      case "flat":
+        return <Waves className="w-4 h-4 text-green-400" />;
+      default:
+        return <Timer className="w-4 h-4 text-gray-400" />;
+    }
+  };
 
-  if (!activeTarget) return null;
-
-  const totalTasks = activeTarget.tasks.length;
-  const completedTasks = activeTarget.tasks.filter(
-    (task) => taskStatuses[task.id]?.status === "completed"
-  ).length;
-  const failedTasks = activeTarget.tasks.filter(
-    (task) => taskStatuses[task.id]?.status === "failed"
-  ).length;
-
-  const progress = (completedTasks / totalTasks) * 100;
+  const getStatusColor = () => {
+    switch (status) {
+      case "completed":
+        return "bg-green-500/10 text-green-400 border-green-500/50";
+      case "running":
+        return "bg-blue-500/10 text-blue-400 border-blue-500/50";
+      case "failed":
+        return "bg-red-500/10 text-red-400 border-red-500/50";
+      default:
+        return "bg-gray-500/10 text-gray-400 border-gray-500/50";
+    }
+  };
 
   return (
     <motion.div
-      className="bg-gray-900/50 p-2 rounded-lg"
-      initial={{ opacity: 0, y: -20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="flex items-center gap-4 p-3 bg-gray-800/30 rounded-lg"
     >
-      <div className="flex flex-col space-y-2">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div className="space-y-0.5">
-            <h3 className="text-sm font-medium">目标进度</h3>
-            <div className="text-xs text-gray-400">
-              已完成 {completedTasks} / {totalTasks} 个任务
-            </div>
-          </div>
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger>
-                <div className="flex space-x-1">
-                  <Badge
-                    variant="outline"
-                    className="h-6 bg-green-500/10 hover:bg-green-500/20"
-                  >
-                    {completedTasks}
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className="h-6 bg-red-500/10 hover:bg-red-500/20"
-                  >
-                    {failedTasks}
-                  </Badge>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>完成: {completedTasks}</p>
-                <p>失败: {failedTasks}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-
-        {/* Progress */}
-        <div className="space-y-1">
-          <Progress value={progress} className="h-1" />
-          <div className="flex justify-between text-xs text-gray-400">
-            <div className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              <span>预计剩余时间: 2小时30分钟</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {failedTasks > 0 && (
-                <div className="flex items-center gap-1 text-red-400">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>{failedTasks} 个失败</span>
-                </div>
-              )}
-              {progress === 100 && (
-                <div className="flex items-center gap-1 text-green-400">
-                  <CheckCircle className="w-3 h-3" />
-                  <span>完成</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      <div className="flex items-center gap-2">
+        {getTypeIcon()}
+        <Badge variant="outline" className={getStatusColor()}>
+          {status}
+        </Badge>
+      </div>
+      <div className="flex-1">
+        <Progress value={(completed / total) * 100} className="h-2" />
+      </div>
+      <div className="text-sm text-gray-400 tabular-nums">
+        {completed}/{total}
       </div>
     </motion.div>
+  );
+};
+
+export function TargetProgress() {
+  const { targets, activeTargetId, startTask, pauseTask } = useSequencerStore();
+
+  const activeTarget = targets.find((t: TargetType) => t.id === activeTargetId);
+
+  const handleTaskAction = useCallback(
+    (taskId: string, status: ExposureTask["status"]) => {
+      if (status === "running") {
+        pauseTask(taskId);
+      } else {
+        startTask(taskId);
+      }
+    },
+    [startTask, pauseTask]
+  );
+
+  if (!activeTarget) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+      >
+        <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-xl flex items-center gap-2">
+              <Clock className="w-5 h-5 text-gray-400" />
+              目标进度
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center justify-center p-8 text-gray-400">
+            <AlertTriangle className="w-12 h-12 mb-4 opacity-50" />
+            <p>请先选择一个目标</p>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
+  }
+
+  const hasRunningTasks = activeTarget.tasks.some(
+    (task: ExposureTask) => task.status === "running"
+  );
+
+  const totalProgress = activeTarget.tasks.reduce(
+    (acc: { completed: number; total: number }, task: ExposureTask) => {
+      acc.completed += task.progress[0];
+      acc.total += task.progress[1];
+      return acc;
+    },
+    { completed: 0, total: 0 }
+  );
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={activeTarget.id}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+      >
+        <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
+          <CardHeader className="space-y-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-teal-500" />
+                <CardTitle className="text-xl">目标进度</CardTitle>
+                <Badge variant="secondary" className="text-xs">
+                  {activeTarget.tasks.length} 个任务
+                </Badge>
+              </div>
+              {activeTarget.tasks.length > 0 && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handleTaskAction(
+                            activeTarget.tasks[0].id,
+                            hasRunningTasks ? "running" : "pending"
+                          )
+                        }
+                        className="h-8"
+                      >
+                        {hasRunningTasks ? (
+                          <>
+                            <Pause className="w-4 h-4 mr-2" />
+                            暂停所有
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 mr-2" />
+                            开始执行
+                          </>
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {hasRunningTasks ? "暂停所有任务" : "开始执行所有任务"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            <div className="space-y-4">
+              <motion.div
+                className="p-4 border border-gray-800 rounded-lg bg-gray-800/30"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.1 }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-400">总进度</span>
+                  <div className="flex items-center gap-2">
+                    <motion.div
+                      animate={{
+                        rotate: hasRunningTasks ? 360 : 0,
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: hasRunningTasks ? Infinity : 0,
+                        ease: "linear",
+                      }}
+                    >
+                      <RefreshCw
+                        className={`w-4 h-4 ${
+                          hasRunningTasks
+                            ? "text-teal-500"
+                            : "text-gray-500"
+                        }`}
+                      />
+                    </motion.div>
+                    <span className="text-sm text-gray-400 tabular-nums">
+                      {((totalProgress.completed / totalProgress.total) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                <Progress
+                  value={(totalProgress.completed / totalProgress.total) * 100}
+                  className="h-2"
+                />
+              </motion.div>
+
+              <div className="space-y-2">
+                <AnimatePresence mode="popLayout">
+                  {activeTarget.tasks.map((task: ExposureTask, index: number) => (
+                    <motion.div
+                      key={task.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      transition={{ delay: index * 0.1 }}
+                    >
+                      <TaskProgress
+                        completed={task.progress[0]}
+                        total={task.progress[1]}
+                        type={task.type}
+                        status={task.status}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+
+                {activeTarget.tasks.length === 0 && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex flex-col items-center justify-center p-8 text-gray-400"
+                  >
+                    <AlertTriangle className="w-12 h-12 mb-4 opacity-50" />
+                    <p>当前目标没有任务</p>
+                  </motion.div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </AnimatePresence>
   );
 }

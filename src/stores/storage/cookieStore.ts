@@ -28,6 +28,8 @@ interface CookieState {
   deleteSelected: () => void;
   encryptCookie: (data: string, key: string) => string;
   decryptCookie: (data: string, key: string) => string | null;
+  getCookie: (name: string) => string | null;
+  getCookies: () => CookieData[];
 }
 
 export const useCookieStore = create<CookieState>((set, get) => ({
@@ -145,6 +147,20 @@ export const useCookieStore = create<CookieState>((set, get) => ({
       log.error("Decryption failed:", error);
       throw new Error("Failed to decrypt data");
     }
+  },
+
+  getCookie: (name) => {
+    log.info(`Getting cookie: ${name}`);
+    const cookie = Cookies.get(name);
+    log.info(`Cookie retrieved successfully: ${name}`);
+    return cookie ?? null;
+  },
+
+  getCookies: () => {
+    log.info("Getting all cookies");
+    const cookies = get().cookies;
+    log.info("Cookies retrieved successfully");
+    return cookies;
   },
 }));
 

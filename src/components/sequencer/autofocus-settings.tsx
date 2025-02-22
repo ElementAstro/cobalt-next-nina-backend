@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { Switch } from "@/components/ui/switch";
+import { useCallback } from "react";
+import { motion } from "framer-motion";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -14,439 +14,364 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  ChevronDown,
   Focus,
-  Thermometer,
-  Clock,
+  ThermometerSun,
   Filter,
-  ZoomIn,
-  History,
-  Save,
-  Stars,
-  Microscope,
-  PlayCircle,
-  RefreshCw,
-  GaugeCircle,
+  Sparkles,
+  ArrowRight,
+  RotateCcw,
+  MoreVertical,
 } from "lucide-react";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
   Tooltip,
-  CartesianGrid,
-} from "recharts";
-
-// 引入 store
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
-  useSequencerStore,
-  useAutofocusConfig,
-  useExecutionStatus,
-  useFocusQualityMetrics,
-  SequencerStateData,
-} from "@/stores/sequencer";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { useSequencerStore } from "@/stores/sequencer";
+import { type AutofocusConfig } from "@/stores/sequencer";
 
-// 定义自动对焦配置类型
-type AutofocusConfigKey = keyof SequencerStateData["autofocusConfig"];
-type AutofocusConfigValue = boolean | number | string | Record<string, number>;
+interface SettingRowProps {
+  label: string;
+  description?: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+const SettingRow = ({ label, description, icon, children }: SettingRowProps) => (
+  <motion.div
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="flex items-center justify-between gap-4 p-4 rounded-lg bg-gray-800/30"
+  >
+    <div className="flex items-center gap-3">
+      {icon && <div className="text-gray-400">{icon}</div>}
+      <div>
+        <Label className="text-sm font-medium">{label}</Label>
+        {description && (
+          <p className="text-xs text-gray-400">{description}</p>
+        )}
+      </div>
+    </div>
+    <div>{children}</div>
+  </motion.div>
+);
 
 export function AutofocusSettings() {
-  // 使用 store 中的配置
-  const autofocusConfig = useAutofocusConfig();
-  const executionStatus = useExecutionStatus();
-  const setConfig = useSequencerStore((state) => state.setAutofocusConfig);
-  const deviceStatus = useSequencerStore((state) => state.deviceStatus);
-  const focusHistory = useSequencerStore((state) => state.focusHistory);
-  const lastFocusTime = useSequencerStore((state) => state.lastFocusTime);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const { autofocusConfig, setAutofocusConfig } = useSequencerStore();
 
-  // 移除未使用的状态
-  // const [isSaving, setIsSaving] = useState(false);
-  // const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
-
-  // 类型安全的配置更新
-  const handleConfigChange = (
-    key: AutofocusConfigKey,
-    value: AutofocusConfigValue
-  ) => {
-    setConfig({ [key]: value });
-  };
-
-  // 添加聚焦历史记录显示
-  const renderFocusHistory = () => (
-    <div className="mt-4 space-y-2">
-      <h3 className="text-sm font-medium">聚焦历史</h3>
-      <div className="text-xs text-gray-400">
-        上次聚焦: {lastFocusTime?.toLocaleString() || "从未"}
-      </div>
-      {focusHistory.slice(-3).map((record, index) => (
-        <div key={index} className="text-xs grid grid-cols-3 gap-2">
-          <span>位置: {record.position}</span>
-          <span>温度: {record.temperature}°C</span>
-          <span>HFD: {record.hfd}</span>
-        </div>
-      ))}
-    </div>
+  const handleConfigChange = useCallback(
+    <K extends keyof AutofocusConfig>(
+      key: K,
+      value: AutofocusConfig[K]
+    ) => {
+      setAutofocusConfig({ [key]: value });
+    },
+    [setAutofocusConfig]
   );
 
-  const focusQualityMetrics = useFocusQualityMetrics();
-
-  // 修复 Recharts 用法，改用 ResponsiveContainer 和 LineChart 组件
-  const renderFocusQualityChart = () => {
-    const data = focusQualityMetrics.focusScoreHistory.map((record) => ({
-      timestamp: record.timestamp.toISOString(),
-      score: record.score,
-      hfd: record.hfd,
-    }));
-
-    return (
-      <div className="h-32 mt-2">
-        <ResponsiveContainer>
-          <LineChart
-            data={data}
-            margin={{ top: 10, right: 10, bottom: 20, left: 40 }}
-          >
-            <CartesianGrid stroke="#374151" strokeDasharray="3 3" />
-            <XAxis
-              dataKey="timestamp"
-              tick={{ fill: "#9CA3AF", fontSize: 10 }}
-              minTickGap={20}
-            />
-            <YAxis
-              tick={{ fill: "#9CA3AF", fontSize: 10 }}
-              domain={[0, "auto"]}
-            />
-            <Tooltip
-              contentStyle={{ backgroundColor: "#1F2937", border: "none" }}
-              labelStyle={{ color: "#9CA3AF" }}
-              itemStyle={{ color: "#fff" }}
-            />
-            <Line
-              type="monotone"
-              dataKey="score"
-              name="对焦得分"
-              stroke="#4F46E5"
-              dot={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="hfd"
-              name="HFD"
-              stroke="#F59E0B"
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  };
+  const resetToDefaults = useCallback(() => {
+    setAutofocusConfig({
+      enabled: false,
+      interval: 30,
+      method: "hfd",
+      minStars: 10,
+      targetHFD: 2.5,
+      maxHFD: 4.0,
+      autofocusOnFilterChange: true,
+      autofocusOnTemperatureChange: true,
+      stepSize: 10,
+      backlash: 0,
+      samples: 5,
+      tolerance: 0.1,
+      maxIterations: 10,
+    });
+  }, [setAutofocusConfig]);
 
   return (
-    <div className="h-[60vh] overflow-hidden">
-      {" "}
-      {/* 增加高度 */}
-      <motion.div
-        className="bg-gray-900 rounded-md border border-gray-700 h-full flex flex-col"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <Collapsible open={!isCollapsed} onOpenChange={setIsCollapsed}>
-          <CollapsibleTrigger asChild>
-            <Button
-              variant="ghost"
-              className="w-full flex justify-between items-center p-1.5 hover:bg-gray-800/50"
+    <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
+      <CardHeader className="space-y-1">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Focus className="w-5 h-5 text-teal-500" />
+            <CardTitle className="text-xl">自动对焦设置</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetToDefaults}
+                    className="h-8 w-8 p-0"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>重置为默认设置</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>更多选项</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>导入配置</DropdownMenuItem>
+                <DropdownMenuItem>导出配置</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <div className="space-y-4">
+          <SettingRow
+            label="启用自动对焦"
+            description="在序列执行期间自动进行对焦"
+            icon={<Focus className="w-4 h-4" />}
+          >
+            <Switch
+              checked={autofocusConfig.enabled}
+              onCheckedChange={(checked) =>
+                handleConfigChange("enabled", checked)
+              }
+            />
+          </SettingRow>
+
+          <SettingRow
+            label="对焦间隔"
+            description="每次自动对焦之间的时间间隔（分钟）"
+            icon={<ArrowRight className="w-4 h-4" />}
+          >
+            <div className="w-44">
+              <Slider
+                min={5}
+                max={120}
+                step={5}
+                value={[autofocusConfig.interval]}
+                onValueChange={([value]) =>
+                  handleConfigChange("interval", value)
+                }
+              />
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            label="对焦方法"
+            description="选择自动对焦使用的算法"
+            icon={<Sparkles className="w-4 h-4" />}
+          >
+            <Select
+              value={autofocusConfig.method}
+              onValueChange={(value) =>
+                handleConfigChange(
+                  "method",
+                  value as AutofocusConfig["method"]
+                )
+              }
             >
-              <div className="flex items-center space-x-2">
-                <Focus className="h-4 w-4" />
-                <span className="text-sm font-medium">自动聚焦</span>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="hfd">HFD</SelectItem>
+                <SelectItem value="curvature">曲率</SelectItem>
+                <SelectItem value="bahtinov">巴赫天诺夫</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow
+            label="最小星数"
+            description="用于对焦的最小参考星数量"
+            icon={<Sparkles className="w-4 h-4" />}
+          >
+            <div className="w-44">
+              <Slider
+                min={3}
+                max={30}
+                step={1}
+                value={[autofocusConfig.minStars]}
+                onValueChange={([value]) =>
+                  handleConfigChange("minStars", value)
+                }
+              />
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            label="目标 HFD"
+            description="期望达到的半高全宽值"
+            icon={<Focus className="w-4 h-4" />}
+          >
+            <div className="w-44">
+              <Slider
+                min={1}
+                max={5}
+                step={0.1}
+                value={[autofocusConfig.targetHFD]}
+                onValueChange={([value]) =>
+                  handleConfigChange("targetHFD", value)
+                }
+              />
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            label="最大 HFD"
+            description="触发自动对焦的 HFD 阈值"
+            icon={<Focus className="w-4 h-4" />}
+          >
+            <div className="w-44">
+              <Slider
+                min={2}
+                max={8}
+                step={0.1}
+                value={[autofocusConfig.maxHFD]}
+                onValueChange={([value]) =>
+                  handleConfigChange("maxHFD", value)
+                }
+              />
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            label="切换滤镜时对焦"
+            description="在更换滤镜后自动进行对焦"
+            icon={<Filter className="w-4 h-4" />}
+          >
+            <Switch
+              checked={autofocusConfig.autofocusOnFilterChange}
+              onCheckedChange={(checked) =>
+                handleConfigChange("autofocusOnFilterChange", checked)
+              }
+            />
+          </SettingRow>
+
+          <SettingRow
+            label="温度变化时对焦"
+            description="当温度变化超过阈值时自动对焦"
+            icon={<ThermometerSun className="w-4 h-4" />}
+          >
+            <Switch
+              checked={autofocusConfig.autofocusOnTemperatureChange}
+              onCheckedChange={(checked) =>
+                handleConfigChange(
+                  "autofocusOnTemperatureChange",
+                  checked
+                )
+              }
+            />
+          </SettingRow>
+
+          {/* Advanced settings */}
+          <motion.div className="space-y-4 pt-4 border-t border-gray-800">
+            <Label className="text-sm text-gray-400">高级设置</Label>
+            <SettingRow
+              label="步进大小"
+              description="每次对焦移动的步数"
+            >
+              <div className="w-44">
+                <Slider
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={[autofocusConfig.stepSize]}
+                  onValueChange={([value]) =>
+                    handleConfigChange("stepSize", value)
+                  }
+                />
               </div>
-              <motion.div
-                animate={{ rotate: isCollapsed ? 0 : 180 }}
-                transition={{ type: "spring", stiffness: 300 }}
-              >
-                <ChevronDown className="h-4 w-4" />
-              </motion.div>
-            </Button>
-          </CollapsibleTrigger>
+            </SettingRow>
 
-          <AnimatePresence>
-            {!isCollapsed && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="overflow-hidden flex-1"
-              >
-                <ScrollArea className="h-full">
-                  <CollapsibleContent className="p-2 space-y-1.5">
-                    {" "}
-                    {/* 减小间距 */}
-                    {/* 设备状态显示优化 */}
-                    <div className="flex items-center justify-between text-xs bg-gray-800/50 p-1.5 rounded-md">
-                      <div className="flex items-center space-x-1">
-                        <GaugeCircle className="w-3 h-3" />
-                        <span>对焦器状态</span>
-                      </div>
-                      <span>位置: {deviceStatus.focuser.position}</span>
-                    </div>
-                    {/* 自动对焦设置网格优化 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {/* 开关设置组 */}
-                      <div className="space-y-1.5 bg-gray-800/30 p-1.5 rounded-md">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <ZoomIn className="w-3 h-3 text-teal-500" />
-                            <Label htmlFor="af-enabled" className="text-xs">
-                              启用自动对焦
-                            </Label>
-                          </div>
-                          <Switch
-                            id="af-enabled"
-                            checked={autofocusConfig.enabled}
-                            onCheckedChange={(checked) =>
-                              handleConfigChange("enabled", checked)
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <Filter className="w-3 h-3 text-blue-500" />
-                            <Label
-                              htmlFor="af-filter-change"
-                              className="text-xs"
-                            >
-                              滤镜更换时对焦
-                            </Label>
-                          </div>
-                          <Switch
-                            id="af-filter-change"
-                            checked={autofocusConfig.autofocusOnFilterChange}
-                            onCheckedChange={(checked) =>
-                              handleConfigChange(
-                                "autofocusOnFilterChange",
-                                checked
-                              )
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <Thermometer className="w-3 h-3 text-red-500" />
-                            <Label htmlFor="af-temp-change" className="text-xs">
-                              温度变化时对焦
-                            </Label>
-                          </div>
-                          <Switch
-                            id="af-temp-change"
-                            checked={
-                              autofocusConfig.autofocusOnTemperatureChange
-                            }
-                            onCheckedChange={(checked) =>
-                              handleConfigChange(
-                                "autofocusOnTemperatureChange",
-                                checked
-                              )
-                            }
-                          />
-                        </div>
-                      </div>
+            <SettingRow
+              label="反向间隙"
+              description="补偿反向运动的间隙"
+            >
+              <div className="w-44">
+                <Slider
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={[autofocusConfig.backlash]}
+                  onValueChange={([value]) =>
+                    handleConfigChange("backlash", value)
+                  }
+                />
+              </div>
+            </SettingRow>
 
-                      {/* 数值设置组 */}
-                      <div className="space-y-1.5 bg-gray-800/30 p-1.5 rounded-md">
-                        <div>
-                          <div className="flex items-center space-x-2 mb-1">
-                            <Clock className="w-3 h-3 text-gray-400" />
-                            <Label htmlFor="af-interval" className="text-xs">
-                              对焦间隔 (分钟)
-                            </Label>
-                          </div>
-                          <Input
-                            id="af-interval"
-                            type="number"
-                            value={autofocusConfig.interval}
-                            onChange={(e) =>
-                              handleConfigChange(
-                                "interval",
-                                parseInt(e.target.value)
-                              )
-                            }
-                            className="h-7 text-xs mt-1"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="af-temp-delta" className="text-xs">
-                            温度变化阈值 (°C)
-                          </Label>
-                          <Input
-                            id="af-temp-delta"
-                            type="number"
-                            value={autofocusConfig.tempDelta}
-                            onChange={(e) =>
-                              handleConfigChange(
-                                "tempDelta",
-                                parseFloat(e.target.value)
-                              )
-                            }
-                            className="h-7 text-xs mt-1"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="af-method" className="text-xs">
-                            对焦方法
-                          </Label>
-                          <Select
-                            value={autofocusConfig.method}
-                            onValueChange={(value) =>
-                              handleConfigChange("method", value)
-                            }
-                          >
-                            <SelectTrigger id="af-method">
-                              <SelectValue placeholder="选择对焦方法" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="hfd">
-                                半通量直径 (HFD)
-                              </SelectItem>
-                              <SelectItem value="curvature">
-                                曲率分析
-                              </SelectItem>
-                              <SelectItem value="bahtinov">
-                                巴赫金诺夫面具
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
-                    {/* 对焦质量分析优化 */}
-                    <div className="space-y-1.5 bg-gray-800/30 p-1.5 rounded-md">
-                      <div className="flex items-center space-x-2">
-                        <Microscope className="w-3 h-3 text-purple-500" />
-                        <h3 className="text-xs font-medium">对焦质量分析</h3>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        <div>
-                          <div className="flex items-center space-x-1 text-gray-400">
-                            <Stars className="w-3 h-3" />
-                            <span>最小星数</span>
-                          </div>
-                          <Input
-                            type="number"
-                            value={focusQualityMetrics.minStars}
-                            onChange={(e) =>
-                              handleConfigChange(
-                                "minStars",
-                                parseInt(e.target.value)
-                              )
-                            }
-                            className="mt-1"
-                          />
-                        </div>
-                        <div>
-                          <span className="text-gray-400">目标HFD</span>
-                          <Input
-                            type="number"
-                            value={focusQualityMetrics.targetHFD}
-                            onChange={(e) =>
-                              handleConfigChange(
-                                "targetHFD",
-                                parseFloat(e.target.value)
-                              )
-                            }
-                            className="mt-1"
-                          />
-                        </div>
-                        <div>
-                          <span className="text-gray-400">最大HFD</span>
-                          <Input
-                            type="number"
-                            value={focusQualityMetrics.maxHFD}
-                            onChange={(e) =>
-                              handleConfigChange(
-                                "maxHFD",
-                                parseFloat(e.target.value)
-                              )
-                            }
-                            className="mt-1"
-                          />
-                        </div>
-                      </div>
-                      <div className="h-24">
-                        {" "}
-                        {/* 减小图表高度 */}
-                        {renderFocusQualityChart()}
-                      </div>
-                    </div>
-                    {/* 操作按钮和状态优化 */}
-                    <div className="flex items-center justify-between mt-2">
-                      {executionStatus.state === "running" && (
-                        <div className="flex items-center text-yellow-500 text-xs">
-                          <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                          <span>正在对焦...</span>
-                        </div>
-                      )}
-                      <div className="flex gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                        >
-                          <PlayCircle className="w-3 h-3 mr-1" />
-                          开始对焦
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() =>
-                            setConfig({
-                              ...useSequencerStore.getState().autofocusConfig,
-                              method: useSequencerStore.getState()
-                                .autofocusConfig.method as
-                                | "hfd"
-                                | "curvature"
-                                | "bahtinov",
-                            })
-                          }
-                          disabled={executionStatus.state === "running"}
-                        >
-                          <Save className="w-3 h-3 mr-1" />
-                          保存设置
-                        </Button>
-                      </div>
-                    </div>
-                    {/* 聚焦历史优化 */}
-                    <div className="bg-gray-800/30 p-1.5 rounded-md">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <History className="w-3 h-3 text-gray-400" />
-                        <h3 className="text-sm font-medium">聚焦历史</h3>
-                      </div>
-                      {renderFocusHistory()}
-                    </div>
-                    {/* 错误提示优化 */}
-                    {executionStatus.errors.length > 0 && (
-                      <div className="mt-1.5 p-1.5 bg-red-900/20 border border-red-900 rounded-md">
-                        <p className="text-red-500 text-xs">
-                          {executionStatus.errors.join(", ")}
-                        </p>
-                      </div>
-                    )}
-                  </CollapsibleContent>
-                </ScrollArea>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Collapsible>
-      </motion.div>
-    </div>
+            <SettingRow
+              label="采样数"
+              description="每个位置的采样次数"
+            >
+              <div className="w-44">
+                <Slider
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={[autofocusConfig.samples]}
+                  onValueChange={([value]) =>
+                    handleConfigChange("samples", value)
+                  }
+                />
+              </div>
+            </SettingRow>
+
+            <SettingRow
+              label="容差"
+              description="HFD 值的接受范围"
+            >
+              <div className="w-44">
+                <Slider
+                  min={0.01}
+                  max={1}
+                  step={0.01}
+                  value={[autofocusConfig.tolerance]}
+                  onValueChange={([value]) =>
+                    handleConfigChange("tolerance", value)
+                  }
+                />
+              </div>
+            </SettingRow>
+
+            <SettingRow
+              label="最大迭代次数"
+              description="对焦过程的最大尝试次数"
+            >
+              <div className="w-44">
+                <Slider
+                  min={3}
+                  max={20}
+                  step={1}
+                  value={[autofocusConfig.maxIterations]}
+                  onValueChange={([value]) =>
+                    handleConfigChange("maxIterations", value)
+                  }
+                />
+              </div>
+            </SettingRow>
+          </motion.div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

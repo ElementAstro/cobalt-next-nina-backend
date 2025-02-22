@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useEffect, useState, useCallback } from "react";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useBadPixelStore } from "@/stores/guiding/badPixelStore";
 import {
   Settings,
+  TableIcon,
   LayoutGrid,
-  LineChart,
+  BarChart3,
   AlertTriangle,
   Undo,
   Redo,
@@ -26,23 +27,16 @@ import {
 } from "@/components/ui/sheet";
 import { toast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import { motion, AnimatePresence } from "framer-motion";
+import { useMediaQuery } from "react-responsive";
+import { cn } from "@/lib/utils";
 
 import SettingsPanel from "@/components/guiding/badpixel/settings-panel";
 import ActionButtons from "@/components/guiding/badpixel/action-buttons";
 import BadPixelVisualization from "@/components/guiding/badpixel/badpixel-visualization";
+import PixelInfo from "@/components/guiding/badpixel/pixel-info";
 
-// 定义操作历史记录的类型
-interface HistoryRecord {
-  hotPixels: number[];
-  coldPixels: number[];
-  timestamp: string;
-}
-
-interface SaveState {
-  loading: boolean;
-  lastSaved?: Date;
-  error?: string;
-}
+import { HistoryRecord, SaveState, VisualMode } from "@/types/guiding/badpixel";
 
 export default function BadPixelInterface() {
   const {
@@ -59,11 +53,16 @@ export default function BadPixelInterface() {
   });
 
   const [manualPixel, setManualPixel] = useState("");
-  const [visualMode, setVisualMode] = useState<"table" | "graph">("table");
-
-  // 使用更具体的类型定义
+  const [visualMode, setVisualMode] = useState<VisualMode>("grid");
+  const [expanded, setExpanded] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  
   const [undoStack, setUndoStack] = useState<HistoryRecord[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryRecord[]>([]);
+
+  // 响应式查询
+  const isLandscape = useMediaQuery({ query: "(orientation: landscape)" });
+  const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
 
   useEffect(() => {
     if (options.autoRefresh) {
@@ -75,12 +74,11 @@ export default function BadPixelInterface() {
     }
   }, [options.autoRefresh, options.refreshInterval, generateBadPixels]);
 
-  // 实现撤销功能
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     if (undoStack.length > 0) {
       const previousState = undoStack[undoStack.length - 1];
-      setRedoStack([
-        ...redoStack,
+      setRedoStack((prev) => [
+        ...prev,
         {
           hotPixels: data.hotPixels,
           coldPixels: data.coldPixels,
@@ -92,16 +90,15 @@ export default function BadPixelInterface() {
         hotPixels: previousState.hotPixels,
         coldPixels: previousState.coldPixels,
       });
-      setUndoStack(undoStack.slice(0, -1));
+      setUndoStack((prev) => prev.slice(0, -1));
     }
-  };
+  }, [data, setData, undoStack]);
 
-  // 实现重做功能
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     if (redoStack.length > 0) {
       const nextState = redoStack[redoStack.length - 1];
-      setUndoStack([
-        ...undoStack,
+      setUndoStack((prev) => [
+        ...prev,
         {
           hotPixels: data.hotPixels,
           coldPixels: data.coldPixels,
@@ -113,7 +110,16 @@ export default function BadPixelInterface() {
         hotPixels: nextState.hotPixels,
         coldPixels: nextState.coldPixels,
       });
-      setRedoStack(redoStack.slice(0, -1));
+      setRedoStack((prev) => prev.slice(0, -1));
+    }
+  }, [data, setData, redoStack]);
+
+  const handleGenerateBadPixels = async () => {
+    try {
+      setIsGenerating(true);
+      await generateBadPixels();
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -121,7 +127,6 @@ export default function BadPixelInterface() {
     try {
       setSaveState({ loading: true });
 
-      // 调用保存 API
       const response = await fetch("/api/badpixels/save", {
         method: "POST",
         headers: {
@@ -173,144 +178,184 @@ export default function BadPixelInterface() {
   };
 
   return (
-    <div className="h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="min-h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white"
+    >
       <div className="h-full p-1 md:p-2">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-1 md:gap-2 h-full">
-          {/* 左侧面板 - 使用更精确的网格比例 */}
+          {/* 左侧控制面板 */}
           <Card className="md:col-span-3 bg-gray-800/50 backdrop-blur border-gray-700">
-            <CardContent className="h-full p-0">
-              <div className="flex flex-col h-full">
-                {/* 标题区域 - 减小内边距 */}
-                <div className="p-2 md:p-3 border-b border-gray-700">
-                  <div className="flex justify-between items-center">
-                    <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 md:w-5 md:h-5 text-yellow-500" />
-                      坏点管理
-                    </h2>
-                  </div>
+            <div className="flex flex-col h-full">
+              {/* 标题区域 */}
+              <div className="p-2 md:p-3 border-b border-gray-700">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 md:w-5 md:h-5 text-yellow-500" />
+                    坏点管理
+                  </h2>
                 </div>
-
-                {/* 操作按钮区域 - 紧凑布局 */}
-                <div className="p-2 md:p-3 border-b border-gray-700">
-                  <ActionButtons
-                    resetCorrectionLevels={resetCorrectionLevels}
-                    generateBadPixels={generateBadPixels}
-                    handleManualAddPixel={addBadPixel}
-                    manualPixel={manualPixel}
-                    setManualPixel={setManualPixel}
-                  />
-                </div>
-
-                {/* 设置和工具栏 - 更紧凑的间距 */}
-                <div className="p-2 md:p-3 border-b border-gray-700">
-                  <div className="flex gap-1.5 flex-wrap">
-                    <Sheet>
-                      <SheetTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full h-8"
-                        >
-                          <Settings className="w-4 h-4 mr-1.5" />
-                          显示设置
-                        </Button>
-                      </SheetTrigger>
-                      <SheetContent className="w-80">
-                        <SheetHeader>
-                          <SheetTitle>设置</SheetTitle>
-                          <SheetDescription>
-                            配置坏点检测和显示参数
-                          </SheetDescription>
-                        </SheetHeader>
-                        <SettingsPanel />
-                      </SheetContent>
-                    </Sheet>
-                    <div className="flex gap-1 w-full">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleUndo}
-                        disabled={undoStack.length === 0}
-                        className="flex-1 h-8"
-                      >
-                        <Undo className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleRedo}
-                        disabled={redoStack.length === 0}
-                        className="flex-1 h-8"
-                      >
-                        <Redo className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => resetCorrectionLevels()}
-                        className="flex-1 h-8"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleSave}
-                        disabled={saveState.loading}
-                        className="flex-1 h-8"
-                      >
-                        {saveState.loading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Save className="w-4 h-4" />
-                        )}
-                        {saveState.loading ? "保存中..." : "保存"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 滚动区域 - 自适应高度 */}
-                <ScrollArea className="flex-1">
-                  <div className="p-2 md:p-3 space-y-2">{/* 滚动内容 */}</div>
-                </ScrollArea>
               </div>
-            </CardContent>
-          </Card>
 
-          {/* 右侧可视化区域 - 优化空间利用 */}
-          <Card className="md:col-span-9 bg-gray-800/50 backdrop-blur border-gray-700">
-            <CardContent className="h-full p-2 md:p-3">
-              <div className="flex flex-col h-full">
-                <div className="flex justify-between items-center mb-2">
-                  <div className="flex items-center gap-1.5">
+              {/* 操作按钮区域 */}
+              <div className="p-2 md:p-3 border-b border-gray-700">
+                <ActionButtons
+                  resetCorrectionLevels={resetCorrectionLevels}
+                  generateBadPixels={handleGenerateBadPixels}
+                  handleManualAddPixel={addBadPixel}
+                  manualPixel={manualPixel}
+                  setManualPixel={setManualPixel}
+                  isGenerating={isGenerating}
+                />
+              </div>
+
+              {/* 工具栏 */}
+              <div className="p-2 md:p-3 border-b border-gray-700">
+                <div className="flex gap-1.5 flex-wrap">
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full h-8 bg-gray-800/50 hover:bg-gray-700/50"
+                      >
+                        <Settings className="w-4 h-4 mr-1.5" />
+                        显示设置
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent
+                      side={isMobile ? "bottom" : "right"}
+                      className="bg-gray-900/95 border-gray-800"
+                    >
+                      <SheetHeader>
+                        <SheetTitle>设置</SheetTitle>
+                        <SheetDescription>配置坏点检测和显示参数</SheetDescription>
+                      </SheetHeader>
+                      <SettingsPanel />
+                    </SheetContent>
+                  </Sheet>
+                  <div className="flex gap-1 w-full">
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() =>
-                        setVisualMode((v) =>
-                          v === "table" ? "graph" : "table"
-                        )
-                      }
-                      className="h-8"
+                      onClick={handleUndo}
+                      disabled={undoStack.length === 0}
+                      className="flex-1 h-8 bg-gray-800/50 hover:bg-gray-700/50"
                     >
-                      {visualMode === "table" ? (
-                        <LayoutGrid className="w-4 h-4 mr-1.5" />
+                      <Undo className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRedo}
+                      disabled={redoStack.length === 0}
+                      className="flex-1 h-8 bg-gray-800/50 hover:bg-gray-700/50"
+                    >
+                      <Redo className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetCorrectionLevels}
+                      className="flex-1 h-8 bg-gray-800/50 hover:bg-gray-700/50"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={saveState.loading}
+                      className="flex-1 h-8 bg-gray-800/50 hover:bg-gray-700/50"
+                    >
+                      {saveState.loading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <LineChart className="w-4 h-4 mr-1.5" />
+                        <Save className="w-4 h-4" />
                       )}
-                      {visualMode === "table" ? "图表模式" : "表格模式"}
                     </Button>
                   </div>
                 </div>
-                <div className="flex-1 bg-gray-900/50 rounded-lg overflow-hidden">
-                  <BadPixelVisualization data={data} />
-                </div>
               </div>
-            </CardContent>
+
+              {/* 滚动区域 */}
+              <ScrollArea className="flex-1 px-2 md:px-3">
+                <PixelInfo
+                  data={data}
+                  visualMode={visualMode}
+                  isLandscape={isLandscape}
+                  expanded={expanded}
+                  onToggleExpand={() => setExpanded(!expanded)}
+                  onManualAddPixel={addBadPixel}
+                  manualPixel={manualPixel}
+                  setManualPixel={setManualPixel}
+                />
+              </ScrollArea>
+            </div>
+          </Card>
+
+          {/* 右侧可视化区域 */}
+          <Card className="md:col-span-9 bg-gray-800/50 backdrop-blur border-gray-700">
+            <div className="h-full p-2 md:p-3">
+              <div className="flex flex-col h-full">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setVisualMode("grid")}
+                      className={cn(
+                        "h-8 bg-gray-800/50 hover:bg-gray-700/50",
+                        visualMode === "grid" && "bg-gray-700/50"
+                      )}
+                    >
+                      <LayoutGrid className="w-4 h-4 mr-1.5" />
+                      网格
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setVisualMode("graph")}
+                      className={cn(
+                        "h-8 bg-gray-800/50 hover:bg-gray-700/50",
+                        visualMode === "graph" && "bg-gray-700/50"
+                      )}
+                    >
+                      <BarChart3 className="w-4 h-4 mr-1.5" />
+                      图表
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setVisualMode("table")}
+                      className={cn(
+                        "h-8 bg-gray-800/50 hover:bg-gray-700/50",
+                        visualMode === "table" && "bg-gray-700/50"
+                      )}
+                    >
+                      <TableIcon className="w-4 h-4 mr-1.5" />
+                      表格
+                    </Button>
+                  </div>
+                </div>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={visualMode}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex-1 bg-gray-900/50 rounded-lg overflow-hidden"
+                  >
+                    <BadPixelVisualization data={data} visualMode={visualMode} />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </div>
           </Card>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

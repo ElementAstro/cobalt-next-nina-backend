@@ -1,71 +1,68 @@
-"use client";
+import { useState, useEffect, useCallback } from 'react';
 
-import { useState, useEffect, useCallback } from "react";
-
-export type StorageType = "local" | "session";
-
-export function useLocalStorage<T>(
-  key: string,
-  initialValue: T,
-  storageType: StorageType = "local"
-) {
-  const storage =
-    storageType === "local" ? window.localStorage : window.sessionStorage;
-
+export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void, () => void] {
+  // 获取存储的值（首次加载）
   const readValue = useCallback((): T => {
-    try {
-      const item = storage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.error(`读取 ${key} 时出错:`, error);
+    if (typeof window === 'undefined') {
       return initialValue;
     }
-  }, [key, initialValue, storage]);
 
-  const [storedValue, setStoredValue] = useState<T>(readValue);
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? (JSON.parse(item) as T) : initialValue;
+    } catch (error) {
+      console.warn(`Error reading localStorage key "${key}":`, error);
+      return initialValue;
+    }
+  }, [initialValue, key]);
 
+  // 状态用于跟踪当前值
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+
+  // 在组件挂载时从 localStorage 读取值
+  useEffect(() => {
+    setStoredValue(readValue());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 返回一个包装函数，用于更新 localStorage 和状态
   const setValue = useCallback(
     (value: T | ((val: T) => T)) => {
+      if (typeof window === 'undefined') {
+        console.warn(`Tried setting localStorage key "${key}" even though environment is not a client`);
+        return;
+      }
+
       try {
-        const valueToStore =
-          value instanceof Function ? value(storedValue) : value;
-        setStoredValue(valueToStore);
-        storage.setItem(key, JSON.stringify(valueToStore));
+        // 允许 value 是一个函数
+        const newValue = value instanceof Function ? value(storedValue) : value;
+
+        // 保存到 localStorage
+        window.localStorage.setItem(key, JSON.stringify(newValue));
+
+        // 保存到状态
+        setStoredValue(newValue);
       } catch (error) {
-        console.error(`设置 ${key} 时出错:`, error);
+        console.warn(`Error setting localStorage key "${key}":`, error);
       }
     },
-    [key, storedValue, storage]
+    [key, storedValue]
   );
 
+  // 移除值的函数
   const removeValue = useCallback(() => {
+    if (typeof window === 'undefined') {
+      console.warn(`Tried removing localStorage key "${key}" even though environment is not a client`);
+      return;
+    }
+
     try {
-      storage.removeItem(key);
+      window.localStorage.removeItem(key);
       setStoredValue(initialValue);
     } catch (error) {
-      console.error(`删除 ${key} 时出错:`, error);
+      console.warn(`Error removing localStorage key "${key}":`, error);
     }
-  }, [key, initialValue, storage]);
+  }, [initialValue, key]);
 
-  // 同步其他标签页的更改或跨组件状态更新
-  useEffect(() => {
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === key) {
-        try {
-          setStoredValue(
-            event.newValue ? JSON.parse(event.newValue) : initialValue
-          );
-        } catch (error) {
-          console.error(`解析 ${key} 的更新数据时出错:`, error);
-        }
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-    };
-  }, [key, initialValue]);
-
-  return { storedValue, setValue, removeValue };
+  return [storedValue, setValue, removeValue];
 }

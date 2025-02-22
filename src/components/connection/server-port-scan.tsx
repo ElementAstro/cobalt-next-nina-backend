@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, X, Download, Save } from "lucide-react";
+import { Shield, X, Download, List, Search, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,21 +20,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
-  TableHead,
   TableHeader,
+  TableHead,
   TableRow,
 } from "@/components/ui/table";
 import { z } from "zod";
 import { toast } from "@/hooks/use-toast";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   ScanHistory,
   usePortScanStore,
 } from "@/stores/connection/portScanStore";
 import logger from "@/utils/logger";
 
-// 添加新的工作线程支持
+// Add Web Worker support
 const scanWorker = new Worker(
   new URL("@/workers/port-scan.worker.ts", import.meta.url)
 );
@@ -51,7 +54,7 @@ const commonPorts: { [key: number]: string } = {
   6379: "Redis",
 };
 
-// Add utility function for chunking arrays
+// Array chunking utility
 const chunkArray = (array: number[], size: number): number[][] => {
   const chunks = [];
   for (let i = 0; i < array.length; i += size) {
@@ -60,18 +63,23 @@ const chunkArray = (array: number[], size: number): number[][] => {
   return chunks;
 };
 
-// 添加 ScanResult 接口定义
 interface ScanResult {
   port: number;
   status: "open" | "closed";
   service?: string;
 }
 
+type ScanSpeed = "fast" | "normal" | "thorough";
+
 const ServerPortScanModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
 }> = ({ isOpen, onClose }) => {
   const [isCancelled, setIsCancelled] = useState(false);
+  const cancelRef = useRef(false);
+  const [activeTab, setActiveTab] = useState("scan");
+  const [showCustomRange, setShowCustomRange] = useState(false);
+
   const {
     progress,
     status,
@@ -86,8 +94,6 @@ const ServerPortScanModal: React.FC<{
     showClosedPorts,
     scanHistory,
     selectedInterface,
-    networkInterfaces,
-    resetScan,
     setIpAddress,
     setPortRange,
     setProgress,
@@ -100,183 +106,9 @@ const ServerPortScanModal: React.FC<{
     setConcurrentScans,
     setShowClosedPorts,
     setScanHistory,
-    setSelectedInterface,
-    setNetworkInterfaces,
   } = usePortScanStore();
 
-  const cancelRef = useRef(false);
-
-  // 处理错误的函数
-  const handleScanError = useCallback(
-    (error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : "未知错误";
-      logger.error("Port scan error:", error);
-      setStatus("扫描出错");
-      toast({
-        title: "扫描错误",
-        description: errorMessage || "端口扫描过程中发生错误",
-        variant: "destructive",
-      });
-      setIsScanning(false);
-    },
-    [setStatus, setIsScanning]
-  );
-
-  // 更新扫描结果
-  const updateScanResults = useCallback(
-    (port: number, scanStatus: string) => {
-      const finalStatus = scanStatus === "open" ? "open" : "closed";
-      const result = (prev: ScanResult[]) => {
-        const newResults = [...prev];
-        const existingIndex = newResults.findIndex((r) => r.port === port);
-        const result: ScanResult = {
-          port,
-          status: finalStatus,
-          service:
-            finalStatus === "open" ? commonPorts[port] || "未知" : undefined,
-        };
-
-        if (existingIndex !== -1) {
-          newResults[existingIndex] = result;
-        } else {
-          newResults.push(result);
-        }
-        return newResults;
-      };
-      setScanResults(result(scanResults));
-    },
-    [scanResults, setScanResults]
-  );
-
-  const getPorts = useCallback(() => {
-    switch (portRange) {
-      case "common":
-        return Array.from({ length: 1000 }, (_, i) => i + 1);
-      case "all":
-        return Array.from({ length: 65535 }, (_, i) => i + 1);
-      case "custom":
-        const ranges = customPortRange
-          .split(",")
-          .map((r) => r.split("-").map(Number));
-        let ports: number[] = [];
-        ranges.forEach(([start, end]) => {
-          ports = ports.concat(
-            Array.from({ length: end - start + 1 }, (_, i) => i + start)
-          );
-        });
-        return ports;
-      default:
-        return [];
-    }
-  }, [portRange, customPortRange]);
-
-  // 更新进度
-  const updateProgress = useCallback(() => {
-    const totalPorts = getPorts().length;
-    const scannedPorts = scanResults.length;
-    setProgress((scannedPorts / totalPorts) * 100);
-  }, [getPorts, scanResults.length, setProgress]);
-
-  // 获取网络接口
-  const fetchNetworkInterfaces = useCallback(async () => {
-    try {
-      const response = await fetch("/api/network-interfaces");
-      if (response.ok) {
-        const interfaces = await response.json();
-        setNetworkInterfaces(interfaces);
-        if (interfaces.length > 0) {
-          setSelectedInterface(interfaces[0]);
-        }
-        logger.info("Fetched network interfaces", { interfaces });
-      } else {
-        throw new Error("无法获取网络接口");
-      }
-    } catch (error: unknown) {
-      console.error("获取网络接口失败:", error);
-      logger.error("Failed to fetch network interfaces", error);
-      toast({
-        title: "错误",
-        description:
-          error instanceof Error ? error.message : "获取网络接口失败",
-        variant: "destructive",
-      });
-    }
-  }, [setNetworkInterfaces, setSelectedInterface]);
-
-  // 启动时获取网络接口
-  useEffect(() => {
-    if (isOpen && !isScanning) {
-      resetScan();
-      fetchNetworkInterfaces();
-    }
-  }, [isOpen, isScanning, resetScan, fetchNetworkInterfaces]);
-
-  // Worker 消息处理
-  useEffect(() => {
-    if (!scanWorker) return;
-
-    scanWorker.onmessage = (event) => {
-      const { port, status, error } = event.data;
-      if (error) {
-        handleScanError(error);
-        return;
-      }
-      updateScanResults(port, status);
-      updateProgress();
-    };
-
-    return () => {
-      scanWorker.terminate();
-    };
-  }, [handleScanError, updateProgress, updateScanResults]);
-
-  // 开始扫描
-  const startScan = async () => {
-    try {
-      ipSchema.parse(ipAddress);
-      if (portRange === "custom" && !validatePortRange(portRange)) {
-        return;
-      }
-
-      setIsScanning(true);
-      setIsCancelled(false);
-      cancelRef.current = false;
-      setProgress(0);
-      setScanResults([]);
-      setStatus("正在扫描...");
-
-      const ports = getPorts();
-      const chunks = chunkArray(ports, concurrentScans);
-
-      for (const chunk of chunks) {
-        if (isCancelled || cancelRef.current) break;
-
-        await Promise.all(
-          chunk.map((port) =>
-            scanWorker.postMessage({
-              port,
-              host: ipAddress,
-              timeout,
-              options: {
-                proxy:
-                  selectedInterface === "proxy"
-                    ? {
-                        host: ipAddress,
-                        port: 8080,
-                      }
-                    : undefined,
-              },
-            })
-          )
-        );
-      }
-
-      finalizeScan();
-    } catch (error: unknown) {
-      handleScanError(error);
-    }
-  };
-
+  // 验证IP地址
   const ipSchema = z
     .string()
     .min(1, "IP地址不能为空")
@@ -319,6 +151,137 @@ const ServerPortScanModal: React.FC<{
     [customPortRange]
   );
 
+  // Worker message handler
+  React.useEffect(() => {
+    if (!scanWorker) return;
+
+    scanWorker.onmessage = (event) => {
+      const { port, status, error } = event.data;
+      if (error) {
+        handleScanError(error);
+        return;
+      }
+      updateScanResults(port, status);
+      updateProgress();
+    };
+
+    return () => {
+      scanWorker.terminate();
+    };
+  }, []);
+
+  const handleScanError = useCallback(
+    (error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : "未知错误";
+      logger.error("Port scan error:", error);
+      setStatus("扫描出错");
+      toast({
+        title: "扫描错误",
+        description: errorMessage || "端口扫描过程中发生错误",
+        variant: "destructive",
+      });
+      setIsScanning(false);
+    },
+    [setStatus, setIsScanning]
+  );
+
+  const updateScanResults = useCallback(
+    (port: number, scanStatus: string) => {
+      const finalStatus = scanStatus === "open" ? "open" : "closed";
+      const result = (prev: ScanResult[]) => {
+        const newResults = [...prev];
+        const existingIndex = newResults.findIndex((r) => r.port === port);
+        const result: ScanResult = {
+          port,
+          status: finalStatus,
+          service: finalStatus === "open" ? commonPorts[port] || "未知" : undefined,
+        };
+
+        if (existingIndex !== -1) {
+          newResults[existingIndex] = result;
+        } else {
+          newResults.push(result);
+        }
+        return newResults;
+      };
+      setScanResults(result(scanResults));
+    },
+    [scanResults, setScanResults]
+  );
+
+  const getPorts = useCallback(() => {
+    switch (portRange) {
+      case "common":
+        return Array.from({ length: 1000 }, (_, i) => i + 1);
+      case "all":
+        return Array.from({ length: 65535 }, (_, i) => i + 1);
+      case "custom":
+        const ranges = customPortRange.split(",").map((r) => r.split("-").map(Number));
+        let ports: number[] = [];
+        ranges.forEach(([start, end]) => {
+          ports = ports.concat(
+            Array.from({ length: end - start + 1 }, (_, i) => i + start)
+          );
+        });
+        return ports;
+      default:
+        return [];
+    }
+  }, [portRange, customPortRange]);
+
+  const updateProgress = useCallback(() => {
+    const totalPorts = getPorts().length;
+    const scannedPorts = scanResults.length;
+    setProgress((scannedPorts / totalPorts) * 100);
+  }, [getPorts, scanResults.length, setProgress]);
+
+  const startScan = async () => {
+    try {
+      ipSchema.parse(ipAddress);
+      if (portRange === "custom" && !validatePortRange(portRange)) {
+        return;
+      }
+
+      setIsScanning(true);
+      setIsCancelled(false);
+      cancelRef.current = false;
+      setProgress(0);
+      setScanResults([]);
+      setStatus("正在扫描...");
+      setActiveTab("results");
+
+      const ports = getPorts();
+      const chunks = chunkArray(ports, concurrentScans);
+
+      for (const chunk of chunks) {
+        if (isCancelled || cancelRef.current) break;
+
+        await Promise.all(
+          chunk.map((port) =>
+            scanWorker.postMessage({
+              port,
+              host: ipAddress,
+              timeout,
+              options: {
+                proxy:
+                  selectedInterface === "proxy"
+                    ? {
+                        host: ipAddress,
+                        port: 8080,
+                      }
+                    : undefined,
+              },
+            })
+          )
+        );
+      }
+
+      finalizeScan();
+    } catch (error: unknown) {
+      handleScanError(error);
+    }
+  };
+
   const finalizeScan = () => {
     if (cancelRef.current) {
       setStatus("扫描已取消");
@@ -346,10 +309,7 @@ const ServerPortScanModal: React.FC<{
         "data:text/csv;charset=utf-8," +
         "Port,Status,Service\n" +
         scanResults
-          .map(
-            (result) =>
-              `${result.port},${result.status},${result.service || ""}`
-          )
+          .map((result) => `${result.port},${result.status},${result.service || ""}`)
           .join("\n");
 
       const encodedUri = encodeURI(csvContent);
@@ -391,7 +351,20 @@ const ServerPortScanModal: React.FC<{
     });
   };
 
+  const handleSpeedChange = (value: ScanSpeed) => {
+    setScanSpeed(value);
+    setTimeoutValue(
+      value === "fast" ? 100 : value === "normal" ? 500 : 2000
+    );
+  };
+
   if (!isOpen) return null;
+
+  const modalVariants = {
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.95 },
+  };
 
   return (
     <AnimatePresence>
@@ -400,309 +373,320 @@ const ServerPortScanModal: React.FC<{
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 dark:bg-opacity-75 overflow-auto"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            transition={{ type: "spring", damping: 20, stiffness: 300 }}
-            className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl relative max-h-screen overflow-y-auto text-gray-100"
+            variants={modalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={{ type: "spring", duration: 0.5 }}
+            className="bg-background dark:bg-gray-900/95 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-xl"
           >
-            <Button
-              onClick={onClose}
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 right-2"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            <h2 className="text-2xl font-bold mb-4 flex items-center text-gray-100">
-              <Shield className="mr-2 text-blue-500" />
-              服务器端口扫描
-            </h2>
-            <Tabs defaultValue="scan" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="scan">扫描</TabsTrigger>
-                <TabsTrigger value="results">结果</TabsTrigger>
-                <TabsTrigger value="history">历史</TabsTrigger>
-              </TabsList>
-              <TabsContent value="scan">
-                <motion.div
-                  className="space-y-4"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
+            <div className="flex flex-col h-full">
+              <div className="p-6 border-b flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-full">
+                    <Shield className="w-6 h-6 text-primary" />
+                  </div>
+                  <h2 className="text-2xl font-semibold">端口扫描</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="hover:bg-accent"
                 >
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="ip-address">IP地址</Label>
-                      <Input
-                        id="ip-address"
-                        placeholder="例如: 192.168.1.1"
-                        value={ipAddress}
-                        onChange={(e) => setIpAddress(e.target.value)}
-                        disabled={isScanning}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="network-interface">网络接口</Label>
-                      <Select
-                        value={selectedInterface}
-                        onValueChange={setSelectedInterface}
-                      >
-                        <SelectTrigger id="network-interface">
-                          <SelectValue placeholder="选择网络接口" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {networkInterfaces.map((iface) => (
-                            <SelectItem key={iface} value={iface}>
-                              {iface}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>端口范围</Label>
-                      <RadioGroup
-                        value={portRange}
-                        onValueChange={setPortRange}
-                        className="space-y-1"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem
-                            value="common"
-                            id="common"
-                            disabled={isScanning}
-                          />
-                          <Label htmlFor="common">常用端口 (1-1000)</Label>
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
+                <div className="px-6 border-b">
+                  <TabsList className="w-full grid grid-cols-3">
+                    <TabsTrigger value="scan" className="flex items-center gap-2">
+                      <Search className="w-4 h-4" />
+                      扫描
+                    </TabsTrigger>
+                    <TabsTrigger value="results" className="flex items-center gap-2">
+                      <List className="w-4 h-4" />
+                      结果
+                    </TabsTrigger>
+                    <TabsTrigger value="settings" className="flex items-center gap-2">
+                      <Settings className="w-4 h-4" />
+                      设置
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                  <TabsContent value="scan" className="mt-0">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">扫描配置</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <Label>目标地址</Label>
+                            <Input
+                              placeholder="输入IP地址"
+                              value={ipAddress}
+                              onChange={(e) => setIpAddress(e.target.value)}
+                              disabled={isScanning}
+                              className="font-mono"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>端口范围</Label>
+                            <RadioGroup
+                              value={portRange}
+                              onValueChange={(value) => {
+                                setPortRange(value);
+                                setShowCustomRange(value === "custom");
+                              }}
+                              className="space-y-2"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="common" id="common" disabled={isScanning} />
+                                <Label htmlFor="common">常用端口 (1-1000)</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="all" id="all" disabled={isScanning} />
+                                <Label htmlFor="all">全部端口 (1-65535)</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="custom" id="custom" disabled={isScanning} />
+                                <Label htmlFor="custom">自定义范围</Label>
+                              </div>
+                            </RadioGroup>
+
+                            <AnimatePresence>
+                              {showCustomRange && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: "auto", opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="overflow-hidden"
+                                >
+                                  <Input
+                                    placeholder="例如: 80,443,3000-4000"
+                                    value={customPortRange}
+                                    onChange={(e) => setCustomPortRange(e.target.value)}
+                                    disabled={isScanning}
+                                    className="mt-2 font-mono"
+                                  />
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem
-                            value="all"
-                            id="all"
-                            disabled={isScanning}
-                          />
-                          <Label htmlFor="all">所有端口 (1-65535)</Label>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>扫描速度</Label>
+                              <Badge variant="outline">
+                                {timeout}ms 超时
+                              </Badge>
+                            </div>
+                            <Select
+                              value={scanSpeed}
+                              onValueChange={handleSpeedChange}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="选择扫描速度" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="fast">快速 (高负载)</SelectItem>
+                                <SelectItem value="normal">正常</SelectItem>
+                                <SelectItem value="thorough">彻底 (低负载)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>并发扫描数</Label>
+                              <Badge variant="outline">
+                                {concurrentScans} 个端口
+                              </Badge>
+                            </div>
+                            <Slider
+                              value={[concurrentScans]}
+                              onValueChange={(value) => setConcurrentScans(value[0])}
+                              min={1}
+                              max={100}
+                              step={1}
+                              disabled={isScanning}
+                            />
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem
-                            value="custom"
-                            id="custom"
-                            disabled={isScanning}
-                          />
-                          <Label htmlFor="custom">自定义</Label>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              checked={showClosedPorts}
+                              onCheckedChange={setShowClosedPorts}
+                              disabled={isScanning}
+                            />
+                            <Label>显示关闭的端口</Label>
+                          </div>
+
+                          {isScanning ? (
+                            <Button
+                              variant="destructive"
+                              onClick={handleCancelScan}
+                              className="min-w-[120px]"
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              取消扫描
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={startScan}
+                              disabled={!ipAddress || isScanning}
+                              className="min-w-[120px]"
+                            >
+                              <Shield className="w-4 h-4 mr-2" />
+                              开始扫描
+                            </Button>
+                          )}
                         </div>
-                      </RadioGroup>
-                      {portRange === "custom" && (
-                        <Input
-                          className="mt-2"
-                          placeholder="例如: 1-100,200-300"
-                          value={customPortRange}
-                          onChange={(e) => setCustomPortRange(e.target.value)}
-                          disabled={isScanning}
-                        />
-                      )}
-                    </div>
 
-                    <div>
-                      <Label htmlFor="scan-speed">扫描速度</Label>
-                      <Select value={scanSpeed} onValueChange={setScanSpeed}>
-                        <SelectTrigger id="scan-speed">
-                          <SelectValue placeholder="选择扫描速度" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="fast">
-                            快速 (100ms 超时)
-                          </SelectItem>
-                          <SelectItem value="normal">
-                            正常 (500ms 超时)
-                          </SelectItem>
-                          <SelectItem value="thorough">
-                            彻底 (2000ms 超时)
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                        {status && (
+                          <Alert>
+                            <AlertTitle>扫描状态</AlertTitle>
+                            <AlertDescription className="flex items-center justify-between">
+                              <span>{status}</span>
+                              <Progress value={progress} className="w-1/3" />
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="timeout" className="flex justify-between">
-                        超时设置
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {timeout}ms
-                        </span>
-                      </Label>
-                      <Slider
-                        id="timeout"
-                        min={100}
-                        max={5000}
-                        step={100}
-                        value={[timeout]}
-                        onValueChange={(value) => setTimeoutValue(value[0])}
-                        disabled={isScanning}
-                      />
-                    </div>
-                    <div>
-                      <Label
-                        htmlFor="concurrent-scans"
-                        className="flex justify-between"
-                      >
-                        并发扫描数
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {concurrentScans}
-                        </span>
-                      </Label>
-                      <Slider
-                        id="concurrent-scans"
-                        min={1}
-                        max={100}
-                        step={1}
-                        value={[concurrentScans]}
-                        onValueChange={(value) => setConcurrentScans(value[0])}
-                        disabled={isScanning}
-                      />
-                    </div>
-                  </div>
+                  <TabsContent value="results" className="mt-0">
+                    <Card>
+                      <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle className="text-lg">扫描结果</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={exportToCSV}
+                            disabled={!scanResults.length}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            导出
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setScanResults([])}
+                            disabled={!scanResults.length}
+                          >
+                            <X className="w-4 h-4 mr-2" />
+                            清空
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        {scanResults.length > 0 ? (
+                          <div className="relative overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-[100px]">端口</TableHead>
+                                  <TableHead className="w-[100px]">状态</TableHead>
+                                  <TableHead>服务</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {scanResults
+                                  .filter(
+                                    (result) => showClosedPorts || result.status === "open"
+                                  )
+                                  .map((result) => (
+                                    <TableRow key={result.port}>
+                                      <TableCell className="font-mono">
+                                        {result.port}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant={
+                                            result.status === "open"
+                                              ? "default"
+                                              : "secondary"
+                                          }
+                                          className={
+                                            result.status === "open"
+                                              ? "bg-green-500/10 text-green-500"
+                                              : undefined
+                                          }
+                                        >
+                                          {result.status === "open" ? "开放" : "关闭"}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-muted-foreground">
+                                        {result.service || "-"}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 text-muted-foreground">
+                            暂无扫描结果
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="show-closed-ports"
-                        checked={showClosedPorts}
-                        onCheckedChange={setShowClosedPorts}
-                        disabled={isScanning}
-                      />
-                      <Label htmlFor="show-closed-ports">显示关闭的端口</Label>
-                    </div>
-                    {isScanning ? (
-                      <Button
-                        onClick={handleCancelScan}
-                        variant="destructive"
-                        className="min-w-[120px]"
-                      >
-                        <X className="mr-2 h-4 w-4" />
-                        取消扫描
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={startScan}
-                        disabled={!ipAddress}
-                        className="min-w-[120px]"
-                      >
-                        <Shield className="mr-2 h-4 w-4" />
-                        开始扫描
-                      </Button>
-                    )}
-                  </div>
-
-                  <div>
-                    <Label className="mb-2">扫描进度</Label>
-                    <motion.div
-                      className="h-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 }}
-                    >
-                      <motion.div
-                        className="h-full bg-blue-500"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress}%` }}
-                        transition={{ duration: 0.5, ease: "easeInOut" }}
-                      />
-                    </motion.div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                      {status}
-                    </p>
-                  </div>
-                </motion.div>
-              </TabsContent>
-              <TabsContent value="results">
-                {scanResults.length > 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.1 }}
-                    className="overflow-y-auto max-h-96"
-                  >
-                    <Table className="min-w-full">
-                      <TableCaption>扫描结果</TableCaption>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>端口</TableHead>
-                          <TableHead>状态</TableHead>
-                          <TableHead>服务</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {scanResults.map((result, index) => (
-                          <TableRow key={index}>
-                            <TableCell>{result.port}</TableCell>
-                            <TableCell>
-                              {result.status === "open" ? "开放" : "关闭"}
-                            </TableCell>
-                            <TableCell>{result.service || "-"}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    <div className="mt-4 flex justify-end space-x-2">
-                      <Button onClick={exportToCSV}>
-                        <Download className="mr-2 h-4 w-4" />
-                        导出CSV
-                      </Button>
-                      <Button onClick={saveScanHistory}>
-                        <Save className="mr-2 h-4 w-4" />
-                        保存结果
-                      </Button>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <p className="text-center text-gray-500 dark:text-gray-400">
-                    暂无扫描结果
-                  </p>
-                )}
-              </TabsContent>
-              <TabsContent value="history">
-                {scanHistory.length > 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.1 }}
-                    className="overflow-y-auto max-h-96"
-                  >
-                    <Table className="min-w-full">
-                      <TableCaption>扫描历史</TableCaption>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>日期</TableHead>
-                          <TableHead>IP地址</TableHead>
-                          <TableHead>开放端口数</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {scanHistory.map((history) => (
-                          <TableRow key={history.id}>
-                            <TableCell>{history.date}</TableCell>
-                            <TableCell>{history.ipAddress}</TableCell>
-                            <TableCell>{history.openPorts}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </motion.div>
-                ) : (
-                  <p className="text-center text-gray-500 dark:text-gray-400">
-                    暂无扫描历史
-                  </p>
-                )}
-              </TabsContent>
-            </Tabs>
+                  <TabsContent value="settings" className="mt-0">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">扫描历史</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {scanHistory.length > 0 ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>时间</TableHead>
+                                <TableHead>IP地址</TableHead>
+                                <TableHead>开放端口数</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {scanHistory.map((history) => (
+                                <TableRow key={history.id}>
+                                  <TableCell>{history.date}</TableCell>
+                                  <TableCell className="font-mono">
+                                    {history.ipAddress}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge>{history.openPorts}</Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <div className="text-center py-8 text-muted-foreground">
+                            暂无扫描历史
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </div>
+              </Tabs>
+            </div>
           </motion.div>
         </motion.div>
       )}

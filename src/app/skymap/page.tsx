@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
@@ -35,9 +35,121 @@ import {
 import ObjectManagement from "@/components/skymap/manager";
 import ObjectSearch from "@/components/skymap/search";
 
-const ImageFraming: React.FC = () => {
+interface TargetInfoProps {
+  targetName: string | undefined;
+  ra: number;
+  dec: number;
+}
+
+interface ControlButtonsProps {
+  onOpenFovDialog: () => void;
+  disabled: boolean;
+  onUpdateCenter: () => void;
+  onNewTarget: () => void;
+}
+
+// 目标信息组件
+const TargetInfo = React.memo<TargetInfoProps>(({ targetName, ra, dec }) => (
+  <div className="space-y-2 text-sm">
+    <div className="text-white/90 flex justify-between">
+      <span>当前目标:</span>
+      <span>{targetName || "无"}</span>
+    </div>
+    <div className="text-white/90 flex justify-between">
+      <span>Ra:</span>
+      <span>{ra.toFixed(5)}</span>
+    </div>
+    <div className="text-white/90 flex justify-between">
+      <span>Dec:</span>
+      <span>{dec.toFixed(5)}</span>
+    </div>
+  </div>
+));
+TargetInfo.displayName = "TargetInfo";
+
+// 控制面板组件
+const ControlButtons = React.memo<ControlButtonsProps>(
+  ({ onOpenFovDialog, disabled, onUpdateCenter, onNewTarget }) => (
+    <div className="space-y-4">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onOpenFovDialog}
+        className="w-full"
+      >
+        视场参数
+      </Button>
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button variant="outline" size="sm" className="w-full">
+            搜索目标
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="right">
+          <SheetHeader>
+            <SheetTitle>搜索目标</SheetTitle>
+            <SheetDescription>在这里可以搜索你感兴趣的目标</SheetDescription>
+          </SheetHeader>
+          <ObjectSearch />
+          <SheetFooter>
+            <SheetClose asChild>
+              <Button type="button" variant="secondary">
+                关闭
+              </Button>
+            </SheetClose>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={onUpdateCenter}
+        >
+          更新中心
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={onUpdateCenter}
+          disabled={disabled}
+        >
+          更新坐标
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={onNewTarget}
+        >
+          新建目标
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          className="w-full"
+          onClick={() => {}}
+        >
+          移动居中
+        </Button>
+      </div>
+    </div>
+  )
+);
+ControlButtons.displayName = "ControlButtons";
+
+const ImageFraming = () => {
+  // 使用memo优化状态选择
+  const store = useSkymapStore();
+  const viewState = useMemo(() => store.viewState, [store.viewState]);
+  const targets = useMemo(() => store.targets, [store.targets]);
+
+  // 缓存常用方法避免重复创建
   const {
-    viewState,
     setViewState,
     updateScreenPosition,
     updateTargetCenter,
@@ -45,44 +157,54 @@ const ImageFraming: React.FC = () => {
     handleZoom,
     togglePanel,
     toggleNightMode,
-  } = useSkymapStore((state) => ({
-    viewState: state.viewState,
-    setViewState: state.setViewState,
-    updateScreenPosition: state.updateScreenPosition,
-    updateTargetCenter: state.updateTargetCenter,
-    calculateFovPoints: state.calculateFovPoints,
-    handleZoom: state.handleZoom,
-    togglePanel: state.togglePanel,
-    toggleNightMode: state.toggleNightMode,
-  }));
-
-  const targets = useSkymapStore((state) => state.targets);
-  const setFocusTarget = useSkymapStore((state) => state.changeFocusTarget);
-  const updateTwilightData = useSkymapStore((state) => state.saveAllTargets);
+    changeFocusTarget: setFocusTarget,
+    saveAllTargets: updateTwilightData,
+  } = useMemo(
+    () => ({
+      setViewState: store.setViewState,
+      updateScreenPosition: store.updateScreenPosition,
+      updateTargetCenter: store.updateTargetCenter,
+      calculateFovPoints: store.calculateFovPoints,
+      handleZoom: store.handleZoom,
+      togglePanel: store.togglePanel,
+      toggleNightMode: store.toggleNightMode,
+      changeFocusTarget: store.changeFocusTarget,
+      saveAllTargets: store.saveAllTargets,
+    }),
+    [store]
+  );
 
   useEffect(() => {
     updateTwilightData();
   }, [updateTwilightData]);
 
-  useEffect(() => {
-    const fovXCalc =
-      ((57.3 / viewState.fovData.focalLength) *
-        viewState.fovData.xPixels *
-        viewState.fovData.xPixelSize) /
-      1000;
-    const fovYCalc =
-      ((57.3 / viewState.fovData.focalLength) *
-        viewState.fovData.yPixels *
-        viewState.fovData.yPixelSize) /
-      1000;
+  // 使用useMemo缓存FOV计算结果
+  const fovCalculations = useMemo(() => {
+    const { focalLength, xPixels, xPixelSize, yPixels, yPixelSize } =
+      viewState.fovData;
 
-    setViewState({
+    // 如果缺少必要数据则返回null
+    if (!focalLength || !xPixels || !xPixelSize || !yPixels || !yPixelSize) {
+      return null;
+    }
+
+    const fovXCalc = ((57.3 / focalLength) * xPixels * xPixelSize) / 1000;
+    const fovYCalc = ((57.3 / focalLength) * yPixels * yPixelSize) / 1000;
+
+    return {
       fovX: fovXCalc,
       fovY: fovYCalc,
       aladinShowFov: Math.max(2 * fovXCalc, 4),
-    });
-    calculateFovPoints();
-  }, [viewState.fovData, setViewState, calculateFovPoints]);
+    };
+  }, [viewState.fovData]);
+
+  // 只在FOV计算结果变化时更新状态
+  useEffect(() => {
+    if (fovCalculations) {
+      setViewState(fovCalculations);
+      calculateFovPoints();
+    }
+  }, [fovCalculations, setViewState, calculateFovPoints]);
 
   return (
     <div className="relative w-screen h-[100dvh] overflow-hidden bg-black">
@@ -112,129 +234,54 @@ const ImageFraming: React.FC = () => {
           <CardContent className="flex-1 p-4 min-h-0">
             <ScrollArea className="h-full">
               <div className="space-y-4">
-                {/* 目标信息区域 */}
-                <div className="space-y-2 text-sm">
-                  <div className="text-white/90 flex justify-between">
-                    <span>当前目标:</span>
-                    <span>{targets.find((t) => t.checked)?.name || "无"}</span>
-                  </div>
-                  <div className="text-white/90 flex justify-between">
-                    <span>Ra:</span>
-                    <span>{viewState.targetRa.toFixed(5)}</span>
-                  </div>
-                  <div className="text-white/90 flex justify-between">
-                    <span>Dec:</span>
-                    <span>{viewState.targetDec.toFixed(5)}</span>
-                  </div>
-                </div>
+                <TargetInfo
+                  targetName={targets.find((t) => t.checked)?.name}
+                  ra={viewState.targetRa}
+                  dec={viewState.targetDec}
+                />
 
-                {/* 控制按钮组 */}
-                <div className="space-y-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setViewState({ showFovDialog: true })}
-                    className="w-full"
-                  >
-                    视场参数
-                  </Button>
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full">
-                        搜索目标
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent side="right">
-                      <SheetHeader>
-                        <SheetTitle>搜索目标</SheetTitle>
-                        <SheetDescription>
-                          在这里可以搜索你感兴趣的目标
-                        </SheetDescription>
-                      </SheetHeader>
-                      <ObjectSearch />
-                      <SheetFooter>
-                        <SheetClose asChild>
-                          <Button type="button" variant="secondary">
-                            关闭
-                          </Button>
-                        </SheetClose>
-                      </SheetFooter>
-                    </SheetContent>
-                  </Sheet>
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full">
-                        目标管理
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent side="right">
-                      <SheetHeader>
-                        <SheetTitle>目标管理</SheetTitle>
-                        <SheetDescription>
-                          在这里可以管理你添加的目标
-                        </SheetDescription>
-                      </SheetHeader>
-                      <ObjectManagement on_choice_maken={() => {}} />
-                      <SheetFooter>
-                        <SheetClose asChild>
-                          <Button type="button" variant="secondary">
-                            关闭
-                          </Button>
-                        </SheetClose>
-                      </SheetFooter>
-                    </SheetContent>
-                  </Sheet>
-                </div>
-                {/* 工具按钮组 */}
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={updateTargetCenter}
-                  >
-                    更新中心
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={updateTargetCenter}
-                    disabled={targets.find((t) => t.checked) == null}
-                  >
-                    更新坐标
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() =>
-                      setFocusTarget({
-                        name: "-",
-                        ra: viewState.targetRa,
-                        dec: viewState.targetDec,
-                        rotation: viewState.cameraRotation,
-                        flag: "",
-                        tag: "",
-                        target_type: "",
-                        size: 0,
-                        checked: false,
-                      })
-                    }
-                  >
-                    新建目标
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {}}
-                  >
-                    移动居中
-                  </Button>
-                </div>
+                <ControlButtons
+                  onOpenFovDialog={() => setViewState({ showFovDialog: true })}
+                  disabled={!targets.find((t) => t.checked)}
+                  onUpdateCenter={updateTargetCenter}
+                  onNewTarget={() =>
+                    setFocusTarget({
+                      name: "-",
+                      ra: viewState.targetRa,
+                      dec: viewState.targetDec,
+                      rotation: viewState.cameraRotation,
+                      flag: "",
+                      tag: "",
+                      target_type: "",
+                      size: 0,
+                      checked: false,
+                    })
+                  }
+                />
+
+                <Sheet>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full">
+                      目标管理
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right">
+                    <SheetHeader>
+                      <SheetTitle>目标管理</SheetTitle>
+                      <SheetDescription>
+                        在这里可以管理你添加的目标
+                      </SheetDescription>
+                    </SheetHeader>
+                    <ObjectManagement on_choice_maken={() => {}} />
+                    <SheetFooter>
+                      <SheetClose asChild>
+                        <Button type="button" variant="secondary">
+                          关闭
+                        </Button>
+                      </SheetClose>
+                    </SheetFooter>
+                  </SheetContent>
+                </Sheet>
               </div>
             </ScrollArea>
           </CardContent>
@@ -346,16 +393,8 @@ const ImageFraming: React.FC = () => {
         </motion.div>
       </div>
 
-      {/* Logo - 优化位置和动画 */}
-      <motion.div
-        className="fixed left-4 top-4 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full z-50 flex items-center justify-center"
-        animate={{ rotate: 360 }}
-        transition={{
-          duration: 10,
-          ease: "linear",
-          repeat: Infinity,
-        }}
-      >
+      {/* Logo - 使用CSS动画替代Framer Motion */}
+      <div className="fixed left-4 top-4 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full z-50 flex items-center justify-center [animation:spin_10s_linear_infinite] will-change-transform">
         <Image
           src="/atom.png"
           width={32}
@@ -364,7 +403,7 @@ const ImageFraming: React.FC = () => {
           className="w-6 h-6"
           priority
         />
-      </motion.div>
+      </div>
 
       <FOVSettingDialog open_dialog={Boolean(viewState.showFovDialog)} />
     </div>

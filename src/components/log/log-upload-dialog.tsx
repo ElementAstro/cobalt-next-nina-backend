@@ -8,9 +8,18 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Tag, X, Save, AlertCircle, Loader2 } from "lucide-react";
+import {
+  Tag,
+  X,
+  Save,
+  AlertCircle,
+  Loader2,
+  MessageSquare,
+  Plus,
+} from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -22,13 +31,29 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check } from "lucide-react";
 import { toast } from "sonner";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+
+interface TagSuggestion {
+  value: string;
+  count: number;
+  lastUsed: Date;
+}
 
 const LogUploadDialog: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openTagSuggestions, setOpenTagSuggestions] = useState(false);
+  const [customTag, setCustomTag] = useState("");
 
   const {
     selectedLogForNote,
@@ -42,249 +67,289 @@ const LogUploadDialog: React.FC = () => {
     setNewTag,
   } = useLogStore();
 
-  const allTags = Array.from(
-    new Set(logs.flatMap((log) => log.tags || []).filter(Boolean))
-  );
+  // Get unique tags and their usage count
+  const tagSuggestions = React.useMemo(() => {
+    const suggestions = new Map<string, TagSuggestion>();
+    
+    logs.forEach(log => {
+      log.tags?.forEach(tag => {
+        const existing = suggestions.get(tag);
+        if (existing) {
+          existing.count++;
+          if (log.timestamp > existing.lastUsed.toISOString()) {
+            existing.lastUsed = new Date(log.timestamp);
+          }
+        } else {
+          suggestions.set(tag, {
+            value: tag,
+            count: 1,
+            lastUsed: new Date(log.timestamp)
+          });
+        }
+      });
+    });
+
+    return Array.from(suggestions.values())
+      .sort((a, b) => b.count - a.count || b.lastUsed.getTime() - a.lastUsed.getTime());
+  }, [logs]);
 
   const handleSave = async () => {
     if (!selectedLogForNote) return;
 
-    setIsLoading(true);
-    setError(null);
-
     try {
+      setIsLoading(true);
+      setError(null);
+
+      // Validate inputs
+      if (customTag && customTag.length > 50) {
+        throw new Error("标签长度不能超过50个字符");
+      }
+
+      // Prepare tags
+      const finalTag = customTag || newTag;
+      const updatedTags = finalTag
+        ? [...new Set([...(selectedLogForNote.tags || []), finalTag])]
+        : selectedLogForNote.tags;
+
+      // Update logs
       const updatedLogs = logs.map((log) =>
         log.id === selectedLogForNote.id
           ? {
               ...log,
               note: newNote || log.note,
-              tags: [...new Set([...(log.tags || []), newTag])].filter(Boolean),
+              tags: updatedTags,
             }
           : log
       );
 
       setLogs(updatedLogs);
       setFilteredLogs(updatedLogs);
+
+      // Reset form
       setNewNote("");
       setNewTag("");
+      setCustomTag("");
       setSelectedLogForNote(null);
 
       toast.success("保存成功", {
-        description: "您的备注和标签已成功保存",
-        duration: 2000,
+        description: "备注和标签已更新",
       });
-    } catch {
-      setError("保存备注和标签时出错");
-      toast.error("保存失败", {
-        description: "保存备注和标签时出错",
-        duration: 2000,
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "保存失败";
+      setError(message);
+      toast.error("操作失败", {
+        description: message,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const existingTags = selectedLogForNote?.tags || [];
+  const handleTagRemove = (tagToRemove: string) => {
+    if (!selectedLogForNote) return;
 
-  const dialogVariants = {
-    hidden: { opacity: 0, y: 20, scale: 0.95 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 25,
-      },
-    },
-    exit: { opacity: 0, y: 20, scale: 0.95 },
+    const updatedLogs = logs.map((log) =>
+      log.id === selectedLogForNote.id
+        ? {
+            ...log,
+            tags: (log.tags || []).filter((tag) => tag !== tagToRemove),
+          }
+        : log
+    );
+
+    setLogs(updatedLogs);
+    setFilteredLogs(updatedLogs);
   };
 
-  return (
-    <AnimatePresence mode="wait">
-      {selectedLogForNote && (
-        <Dialog open={true} onOpenChange={() => setSelectedLogForNote(null)}>
-          <DialogContent className="dark:bg-gray-800/95 backdrop-blur-sm">
-            <motion.div
-              variants={dialogVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-            >
-              <DialogHeader>
-                <div className="flex items-center space-x-2">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    <Tag className="h-5 w-5 text-blue-500" />
-                  </motion.div>
-                  <motion.div
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.3 }}
-                  >
-                    <DialogTitle>添加备注和标签</DialogTitle>
-                  </motion.div>
-                </div>
-              </DialogHeader>
+  const handleClose = () => {
+    setSelectedLogForNote(null);
+    setNewNote("");
+    setNewTag("");
+    setCustomTag("");
+    setError(null);
+  };
 
+  if (!selectedLogForNote) return null;
+
+  return (
+    <Dialog open={true} onOpenChange={handleClose}>
+      <DialogContent className="max-w-2xl">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.2 }}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              添加备注和标签
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-6 py-6">
+            {error && (
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
-                className="grid gap-4 py-4"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-md"
               >
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center gap-2 p-3 bg-red-500/10 text-red-500 rounded-md"
-                  >
-                    <AlertCircle className="h-4 w-4" />
-                    <Label className="text-sm">{error}</Label>
-                  </motion.div>
-                )}
-                <div className="grid gap-2">
-                  <Label className="text-sm font-medium dark:text-gray-300">
-                    现有标签
-                  </Label>
-                  <motion.div className="flex flex-wrap gap-2" layout>
-                    {existingTags.map((tag, index) => (
+                <AlertCircle className="h-4 w-4" />
+                <p className="text-sm font-medium">{error}</p>
+              </motion.div>
+            )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">原始日志</CardTitle>
+                <CardDescription>
+                  {new Date(selectedLogForNote.timestamp).toLocaleString()}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[100px] w-full rounded-md border p-4">
+                  <pre className="text-sm font-mono">
+                    {selectedLogForNote.message}
+                  </pre>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">已有标签</Label>
+                <div className="flex flex-wrap gap-2 min-h-[32px] p-2 rounded-md border bg-muted/50">
+                  <AnimatePresence>
+                    {selectedLogForNote.tags?.map((tag) => (
                       <motion.div
-                        key={index}
+                        key={tag}
                         layout
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.1 * index }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ duration: 0.2 }}
                       >
-                        <Badge variant="secondary" className="relative">
-                          {tag}
+                        <Badge
+                          variant="secondary"
+                          className="pl-2 h-6 gap-1 hover:bg-muted"
+                        >
+                          <span>{tag}</span>
                           <Button
-                            onClick={() => {
-                              const updatedTags = existingTags.filter(
-                                (t) => t !== tag
-                              );
-                              const updatedLogs = logs.map((log) =>
-                                log.id === selectedLogForNote.id
-                                  ? { ...log, tags: updatedTags }
-                                  : log
-                              );
-                              setLogs(updatedLogs);
-                              setFilteredLogs(updatedLogs);
-                            }}
-                            className="absolute -top-1 -right-1 p-0.5 rounded-full bg-red-500/20 hover:bg-red-500/30"
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-4 p-0 hover:bg-transparent"
+                            onClick={() => handleTagRemove(tag)}
                           >
-                            <X className="h-3 w-3 text-red-500" />
+                            <X className="h-3 w-3" />
                           </Button>
                         </Badge>
                       </motion.div>
                     ))}
-                  </motion.div>
+                  </AnimatePresence>
                 </div>
+              </div>
 
-                <div className="grid gap-2">
-                  <Label
-                    htmlFor="note"
-                    className="text-sm font-medium dark:text-gray-300"
-                  >
-                    备注
-                  </Label>
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.5 }}
-                  >
-                    <Textarea
-                      id="note"
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      className="dark:bg-gray-700/50 dark:text-gray-200 min-h-[150px] resize-y"
-                      placeholder="添加备注..."
-                    />
-                  </motion.div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label
-                    htmlFor="tag"
-                    className="text-sm font-medium dark:text-gray-300"
-                  >
-                    新标签
-                  </Label>
-                  <Popover
-                    open={openTagSuggestions}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">添加新标签</Label>
+                <div className="flex gap-2">
+                  <Popover 
+                    open={openTagSuggestions} 
                     onOpenChange={setOpenTagSuggestions}
                   >
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
                         role="combobox"
-                        aria-expanded={openTagSuggestions}
-                        className="w-full justify-between dark:bg-gray-700/50 dark:text-gray-200"
+                        className="w-[200px] justify-between"
                       >
-                        {newTag || "选择或输入新标签..."}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        {newTag || "选择已有标签..."}
+                        <Plus className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
+                    <PopoverContent className="w-[200px] p-0">
                       <Command>
                         <CommandGroup>
-                          {allTags.map((tag) => (
+                          {tagSuggestions.map((tag) => (
                             <CommandItem
-                              key={tag}
-                              value={tag}
-                              onSelect={(currentValue) => {
-                                setNewTag(currentValue);
+                              key={tag.value}
+                              value={tag.value}
+                              onSelect={(value) => {
+                                setNewTag(value);
                                 setOpenTagSuggestions(false);
                               }}
                             >
                               <Check
                                 className={cn(
                                   "mr-2 h-4 w-4",
-                                  newTag === tag ? "opacity-100" : "opacity-0"
+                                  newTag === tag.value ? "opacity-100" : "opacity-0"
                                 )}
                               />
-                              {tag}
+                              <span>{tag.value}</span>
+                              <Badge 
+                                variant="secondary" 
+                                className="ml-auto"
+                              >
+                                {tag.count}
+                              </Badge>
                             </CommandItem>
                           ))}
                         </CommandGroup>
                       </Command>
                     </PopoverContent>
                   </Popover>
+                  
+                  <div className="relative flex-1">
+                    <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="或输入新标签..."
+                      value={customTag}
+                      onChange={(e) => setCustomTag(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
                 </div>
-              </motion.div>
+              </div>
 
-              <DialogFooter className="gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setSelectedLogForNote(null)}
-                  className="dark:text-gray-300"
-                  disabled={isLoading}
-                >
-                  <X className="h-4 w-4 mr-1" />
-                  取消
-                </Button>
-                <Button
-                  onClick={handleSave}
-                  className="bg-blue-600 dark:bg-blue-500 dark:text-white"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 mr-1" />
-                  )}
-                  {isLoading ? "保存中..." : "保存"}
-                </Button>
-              </DialogFooter>
-            </motion.div>
-          </DialogContent>
-        </Dialog>
-      )}
-    </AnimatePresence>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">备注内容</Label>
+                <Textarea
+                  placeholder="添加备注..."
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  className="min-h-[100px] resize-y"
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" disabled={isLoading}>
+                取消
+              </Button>
+            </DialogClose>
+            <Button 
+              onClick={handleSave} 
+              disabled={isLoading}
+              className={cn(
+                "min-w-[80px]",
+                isLoading && "cursor-not-allowed"
+              )}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-1" />
+                  保存
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </motion.div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
