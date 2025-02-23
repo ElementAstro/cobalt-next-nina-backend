@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   HostapdConfig,
   hostapdConfigSchema,
@@ -51,19 +53,38 @@ import {
   Signal,
   Lock,
   EyeOff,
+  RotateCw,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDnsmasqStore } from "@/store/useExtraStore";
 import { useHostapdStore } from "@/store/useExtraStore";
 import { Progress } from "@/components/ui/progress";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TooltipProvider,
 } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useHotkeys } from "react-hotkeys-hook";
+import { cn } from "@/lib/utils";
 
-// 增强的 Zod 验证
+// 增强的验证模式
 const enhancedHostapdSchema = hostapdConfigSchema.extend({
   ssid: z
     .string()
@@ -76,75 +97,260 @@ const enhancedHostapdSchema = hostapdConfigSchema.extend({
     .max(63, "密码不能超过63个字符")
     .regex(/[A-Z]/, "密码必须包含至少一个大写字母")
     .regex(/[a-z]/, "密码必须包含至少一个小写字母")
-    .regex(/[0-9]/, "密码必须包含至少一个数字"),
+    .regex(/[0-9]/, "密码必须包含至少一个数字")
+    .regex(/[\W_]/, "密码必须包含至少一个特殊字符"),
   country_code: z
     .string()
     .length(2, "国家代码必须是2个字符")
     .regex(/^[A-Z]{2}$/, "国家代码必须是2个大写字母"),
 });
 
-export function HostapdConfigForm() {
-  const dnsmasqStore = useDnsmasqStore();
-  const hostapdStore = useHostapdStore();
+  default: {
+    ssid: "MyWiFi",
+    wpa_passphrase: "MyPassword123!",
+    interface: "wlan0",
+    driver: "nl80211",
+    hw_mode: "g",
+    channel: 6,
+    wpa: 2,
+    wpa_key_mgmt: "WPA-PSK",
+    wpa_pairwise: "TKIP",
+    rsn_pairwise: "CCMP",
+    auth_algs: 1,
+    country_code: "US",
+    ieee80211n: 1,
+    ieee80211ac: 1,
+    wmm_enabled: 1,
+    macaddr_acl: 0,
+    ignore_broadcast_ssid: 0,
+  },
+  performance: {
+    ...configPresets.default,
+    hw_mode: "a",
+    channel: 36,
+    ieee80211ac: 1,
+    wmm_enabled: 1,
+  },
+  secure: {
+    ...configPresets.default,
+    ignore_broadcast_ssid: 1,
+    macaddr_acl: 1,
+    wpa: 3,
+  },
+};
+
+// 状态动画变体
+const fadeAnimation = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.2 },
+};
+
+const slideAnimation = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -10 },
+  transition: {
+    type: "spring",
+    stiffness: 300,
+    damping: 25,
+  },
+};
+
+// 密码强度指示器组件
+const PasswordStrength = memo(({ password }: { password: string }) => {
+  const getStrength = () => {
+    const checks = [
+      password.length >= 12,
+      /[A-Z]/.test(password),
+      /[a-z]/.test(password),
+      /[0-9]/.test(password),
+      /[\W_]/.test(password),
+    ];
+    
+    const strength = checks.filter(Boolean).length;
+    const percentage = (strength / checks.length) * 100;
+
+    if (percentage <= 20) return { value: percentage, color: "bg-red-500", label: "非常弱" };
+    if (percentage <= 40) return { value: percentage, color: "bg-orange-500", label: "弱" };
+    if (percentage <= 60) return { value: percentage, color: "bg-yellow-500", label: "中等" };
+    if (percentage <= 80) return { value: percentage, color: "bg-blue-500", label: "强" };
+    return { value: percentage, color: "bg-green-500", label: "非常强" };
+  };
+
+  const { value, color, label } = getStrength();
+
+  return (
+    <motion.div 
+      className="space-y-1"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+        <motion.div
+          className={cn("h-full", color)}
+          initial={{ width: 0 }}
+          animate={{ width: `${value}%` }}
+          transition={{ duration: 0.5 }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">密码强度: {label}</p>
+    </motion.div>
+  );
+});
+
+PasswordStrength.displayName = "PasswordStrength";
+
+// 网络状态卡片组件
+const NetworkStats = memo(({ stats }: { 
+  stats: {
+    connectedDevices: number;
+    networkLoad: number;
+    signalStrength: number;
+  }
+}) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-lg flex items-center gap-2">
+        <Signal className="w-5 h-5 text-primary" />
+        网络状态
+      </CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="space-y-6">
+        <div className="grid grid-cols-3 gap-4">
+          <StatsCard
+            label="已连接设备"
+            value={stats.connectedDevices}
+            icon={Wifi}
+          />
+          <StatsCard
+            label="网络负载"
+            value={`${stats.networkLoad}%`}
+            icon={Signal}
+          />
+          <StatsCard
+            label="信号强度"
+            value={`${stats.signalStrength}%`}
+            icon={Radio}
+          />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">网络负载</span>
+            <span className="font-medium">{stats.networkLoad}%</span>
+          </div>
+          <Progress 
+            value={stats.networkLoad} 
+            className={cn(
+              "h-2 transition-all duration-300",
+              stats.networkLoad > 80 ? "bg-red-500" :
+              stats.networkLoad > 60 ? "bg-yellow-500" :
+              "bg-primary"
+            )}
+          />
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+));
+
+NetworkStats.displayName = "NetworkStats";
+
+// 状态卡片组件
+const StatsCard = memo(({ 
+  label, 
+  value, 
+  icon: Icon 
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ElementType;
+}) => (
+  <motion.div
+    className={cn(
+      "p-4 rounded-lg border",
+      "bg-card/50 backdrop-blur-sm",
+      "transition-all duration-200"
+    )}
+    whileHover={{ scale: 1.02 }}
+    transition={{ type: "spring", stiffness: 300 }}
+  >
+    <div className="flex items-center gap-2">
+      <Icon className="w-4 h-4 text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">{label}</span>
+    </div>
+    <p className="text-2xl font-bold mt-1">{value}</p>
+  </motion.div>
+));
+
+StatsCard.displayName = "StatsCard";
+
+// 主组件
+export function HostapdConfigPanel() {
   const [isLoading, setIsLoading] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
-  const [status, setStatus] = useState<"active" | "inactive" | "error">(
-    "inactive"
-  );
-  const [availableChannels, setAvailableChannels] = useState<number[]>(
-    CHANNEL_OPTIONS["2.4GHz"]
-  );
+  const [status, setStatus] = useState<"active" | "inactive" | "error">("inactive");
+  const [availableChannels, setAvailableChannels] = useState<number[]>(CHANNEL_OPTIONS["2.4GHz"]);
   const [connectionStats, setConnectionStats] = useState({
     connectedDevices: 0,
     networkLoad: 0,
     signalStrength: 0,
   });
 
+  const dnsmasqStore = useDnsmasqStore();
+  const hostapdStore = useHostapdStore();
+
   const form = useForm<HostapdConfig>({
     resolver: zodResolver(enhancedHostapdSchema),
-    defaultValues: {
-      ssid: "",
-      wpa_passphrase: "",
-      interface: "wlan0",
-      driver: "nl80211",
-      hw_mode: "g",
-      channel: 6,
-      wpa: 2,
-      wpa_key_mgmt: "WPA-PSK",
-      wpa_pairwise: "TKIP",
-      rsn_pairwise: "CCMP",
-      auth_algs: 1,
-      country_code: "US",
-      ieee80211n: 1,
-      ieee80211ac: 1,
-      wmm_enabled: 1,
-      macaddr_acl: 0,
-      ignore_broadcast_ssid: 0,
-    },
+    defaultValues: hostapdStore.config || configPresets.default,
   });
 
-  const watchHwMode = form.watch("hw_mode");
+  const { control, handleSubmit, watch, setValue, formState: { errors, isDirty } } = form;
+  const watchHwMode = watch("hw_mode");
+  const watchPassword = watch("wpa_passphrase");
 
-  // 性能优化：使用 debounce 处理频道更新
+  // 监听表单变化
+  useEffect(() => {
+    setHasChanges(isDirty);
+  }, [isDirty]);
+
+  // 快捷键
+  useHotkeys('mod+s', (e) => {
+    e.preventDefault();
+    if (hasChanges) {
+      setShowConfirm(true);
+    }
+  }, { enableOnFormTags: true });
+
+  useHotkeys('mod+r', (e) => {
+    e.preventDefault();
+    handleReset();
+  }, { enableOnFormTags: true });
+
+  // 频道更新
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (watchHwMode === "a") {
         setAvailableChannels(CHANNEL_OPTIONS["5GHz"]);
-        form.setValue("channel", 36);
+        setValue("channel", 36);
       } else {
         setAvailableChannels(CHANNEL_OPTIONS["2.4GHz"]);
-        form.setValue("channel", 6);
+        setValue("channel", 6);
       }
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [watchHwMode, form]);
+  }, [watchHwMode, setValue]);
 
-  // 实时状态监控
+  // 状态监控
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        // 模拟获取连接状态
         const stats = await fetchConnectionStats();
         setConnectionStats(stats);
       } catch (error) {
@@ -155,6 +361,27 @@ export function HostapdConfigForm() {
     return () => clearInterval(interval);
   }, []);
 
+  // 重置配置
+  const handleReset = useCallback(() => {
+    form.reset(hostapdStore.config);
+    toast({
+      description: "配置已重置",
+      action: <RotateCw className="h-4 w-4" />,
+    });
+  }, [form, hostapdStore.config]);
+
+  // 应用预设
+  const applyPreset = useCallback((preset: keyof typeof configPresets) => {
+    form.reset(configPresets[preset]);
+    toast({
+      description: `已应用${
+        preset === 'performance' ? '性能优先' :
+        preset === 'secure' ? '安全优先' : '默认'
+      }配置`,
+    });
+  }, [form]);
+
+  // 切换接入点状态
   const handleToggleAP = async () => {
     setIsLoading(true);
     try {
@@ -162,8 +389,13 @@ export function HostapdConfigForm() {
       setStatus(newStatus);
 
       toast({
-        title: `WiFi 接入点 ${newStatus === "active" ? "已启动" : "已停止"}`,
+        title: `WiFi 接入点${newStatus === "active" ? "已启动" : "已停止"}`,
         description: `接入点已成功${newStatus === "active" ? "激活" : "停用"}`,
+        action: newStatus === "active" ? (
+          <CheckCircle className="h-4 w-4 text-green-500" />
+        ) : (
+          <WifiOff className="h-4 w-4" />
+        ),
       });
 
       hostapdStore.setConfig(form.getValues());
@@ -173,42 +405,48 @@ export function HostapdConfigForm() {
         title: "错误",
         description: "切换接入点状态失败",
         variant: "destructive",
+        action: <AlertTriangle className="h-4 w-4" />,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const syncWithDnsmasq = () => {
+  // 同步DNS配置
+  const syncWithDnsmasq = useCallback(() => {
     if (status === "active" && dnsmasqStore.config) {
       dnsmasqStore.updateConfig({
         ...dnsmasqStore.config,
         listenAddress: form.getValues("interface"),
       });
     }
-  };
+  }, [status, dnsmasqStore, form]);
 
-  async function onSubmit(values: HostapdConfig) {
+  // 保存配置
+  const onSubmit = async (values: HostapdConfig) => {
     setIsLoading(true);
     try {
       await hostapdStore.setConfig(values);
+      syncWithDnsmasq();
+      setHasChanges(false);
+      setShowConfirm(false);
 
       toast({
         title: "配置已保存",
-        description: "Hostapd 配置已成功更新",
+        description: "WiFi配置已成功更新",
+        action: <CheckCircle className="h-4 w-4 text-green-500" />,
       });
-
-      syncWithDnsmasq();
     } catch (error) {
       toast({
         title: "错误",
-        description: "保存 Hostapd 配置失败",
+        description: "保存配置失败",
         variant: "destructive",
+        action: <AlertTriangle className="h-4 w-4" />,
       });
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   // 模拟获取连接状态
   const fetchConnectionStats = async () => {
@@ -231,23 +469,35 @@ export function HostapdConfigForm() {
     <div className="p-4 min-h-[calc(100vh-4rem)] flex flex-col gap-4">
       <motion.div
         className="w-full flex-1"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+        initial={fadeAnimation.initial}
+        animate={fadeAnimation.animate}
+        exit={fadeAnimation.exit}
       >
         <Card className="h-full flex flex-col">
           <CardHeader className="flex-none space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <CardTitle className="flex items-center gap-2 text-xl">
-                  <Wifi className="w-5 h-5" />
-                  Hostapd 配置
+                  <Wifi className="w-5 h-5 text-primary" />
+                  <span>WiFi 配置</span>
+                  <Badge
+                    variant={status === "active" ? "default" : "secondary"}
+                    className={cn(
+                      "ml-2",
+                      status === "active" && "bg-green-500/10 text-green-500",
+                      status === "error" && "bg-red-500/10 text-red-500"
+                    )}
+                  >
+                    {status === "active" ? "已启动" : 
+                     status === "error" ? "错误" : "已停止"}
+                  </Badge>
                 </CardTitle>
                 <CardDescription className="mt-1">
-                  配置您的 WiFi 接入点设置
+                  配置并管理您的WiFi接入点
                 </CardDescription>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Button
                   variant={status === "active" ? "destructive" : "default"}
                   onClick={handleToggleAP}
@@ -262,23 +512,63 @@ export function HostapdConfigForm() {
                   {status === "active" ? "停止接入点" : "启动接入点"}
                 </Button>
 
-                <div className="flex items-center justify-between sm:justify-start gap-2 p-2 rounded-lg border bg-muted/50">
-                  <Switch
-                    id="advanced-mode"
-                    checked={isAdvancedMode}
-                    onCheckedChange={setIsAdvancedMode}
-                  />
-                  <Label htmlFor="advanced-mode" className="text-sm">
-                    高级模式
-                  </Label>
-                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setIsAdvancedMode(!isAdvancedMode)}
+                        className={cn(
+                          "w-9 h-9",
+                          "transition-all duration-200",
+                          isAdvancedMode && "border-primary text-primary"
+                        )}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        {isAdvancedMode ? "关闭" : "开启"}高级模式
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => applyPreset('default')}
+                className="h-8 text-xs"
+              >
+                默认配置
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => applyPreset('performance')}
+                className="h-8 text-xs"
+              >
+                性能优先
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => applyPreset('secure')}
+                className="h-8 text-xs"
+              >
+                安全优先
+              </Button>
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-auto">
+          <CardContent className="flex-1 overflow-hidden">
             <Tabs defaultValue="basic" className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-2 sticky top-0 z-10 bg-background">
+              <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="basic" className="py-2">
                   <Settings className="w-4 h-4 mr-2" />
                   基本设置
@@ -289,333 +579,150 @@ export function HostapdConfigForm() {
                 </TabsTrigger>
               </TabsList>
 
-              <div className="flex-1 overflow-y-auto py-4">
-                <TabsContent value="basic">
-                  <Form {...form}>
-                    <motion.form
-                      onSubmit={form.handleSubmit(onSubmit)}
-                      className="space-y-4"
-                    >
-                      <motion.div
-                        className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <FormField
-                          control={form.control}
-                          name="ssid"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="flex items-center gap-2">
-                                <Radio className="w-4 h-4" />
-                                网络名称 (SSID)
-                              </FormLabel>
-                              <FormControl>
-                                <Input placeholder="MyWiFi" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="country_code"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="flex items-center gap-2">
-                                <Info className="w-4 h-4" />
-                                国家代码
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="US"
-                                  maxLength={2}
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </motion.div>
-
-                      {isAdvancedMode && (
+              <ScrollArea className="flex-1">
+                <div className="py-6 space-y-8">
+                  <TabsContent value="basic" className="mt-0">
+                    <Form {...form}> className="mt-0"
+                      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                         <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="space-y-4"
+                          variants={slideAnimation}
+                          initial="initial"
+                          animate="animate"
+                          className="grid gap-6"
                         >
-                          <motion.div
-                            className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ duration: 0.3, delay: 0.1 }}
-                          >
-                            <FormField
-                              control={form.control}
-                              name="hw_mode"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel className="flex items-center gap-2">
-                                    <Signal className="w-4 h-4" />
-                                    频段
-                                  </FormLabel>
-                                  <Select
-                                    onValueChange={field.onChange}
-                                    defaultValue={field.value}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="选择频段" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      <SelectItem value="a">
-                                        5 GHz (802.11a/n/ac)
-                                      </SelectItem>
-                                      <SelectItem value="g">
-                                        2.4 GHz (802.11b/g/n)
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="channel"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel className="flex items-center gap-2">
-                                    <Radio className="w-4 h-4" />
-                                    信道
-                                  </FormLabel>
-                                  <Select
-                                    onValueChange={(value) =>
-                                      field.onChange(Number(value))
-                                    }
-                                    value={field.value.toString()}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="选择信道" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      {availableChannels.map((channel) => (
-                                        <SelectItem
-                                          key={channel}
-                                          value={channel.toString()}
-                                        >
-                                          信道 {channel}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </motion.div>
-                        </motion.div>
-                      )}
-                    </motion.form>
-                  </Form>
-                </TabsContent>
+                          <FormField
+                            control={control}
+                            name="ssid"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2">
+                                  <Radio className="w-4 h-4 text-primary" />
+                                  网络名称 (SSID)
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    placeholder="输入网络名称..."
+                                    {...field}
+                                    className={cn(
+                                      "transition-all duration-200",
+                                      errors.ssid && "border-red-500 focus-visible:ring-red-500"
+                                    )}
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  设置WiFi网络的显示名称
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-                <TabsContent value="security">
-                  <Form {...form}>
-                    <motion.form
-                      onSubmit={form.handleSubmit(onSubmit)}
-                      className="space-y-4"
-                    >
-                      <motion.div
-                        className="grid grid-cols-1 gap-4"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.3, delay: 0.2 }}
-                      >
-                        <FormField
-                          control={form.control}
-                          name="wpa_passphrase"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="flex items-center gap-2">
-                                <Lock className="w-4 h-4" />
-                                安全密码
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="password"
-                                  placeholder="********"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                          <FormField
+                            control={control}
+                            name="hw_mode"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2">
+                                  <Signal className="w-4 h-4 text-primary" />
+                                  无线频段
+                                </FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="选择无线频段" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="a">
+                                      5 GHz (802.11a/n/ac)
+                                    </SelectItem>
+                                    <SelectItem value="g">
+                                      2.4 GHz (802.11b/g/n)
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  选择无线网络的工作频段
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-                        {isAdvancedMode && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="space-y-4"
-                          >
+                          {isAdvancedMode && (
                             <motion.div
-                              className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ duration: 0.3, delay: 0.1 }}
+                              variants={slideAnimation}
+                              initial="initial"
+                              animate="animate"
+                              className="space-y-4"
                             >
                               <FormField
-                                control={form.control}
-                                name="ignore_broadcast_ssid"
+                                control={control}
+                                name="channel"
                                 render={({ field }) => (
-                                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                                    <div className="space-y-0.5">
-                                      <FormLabel className="text-base flex items-center gap-2">
-                                        <EyeOff className="w-4 h-4" />
-                                        隐藏网络
-                                      </FormLabel>
-                                      <FormDescription>
-                                        不广播 SSID
-                                      </FormDescription>
-                                    </div>
-                                    <FormControl>
-                                      <Switch
-                                        checked={field.value === 1}
-                                        onCheckedChange={(checked) =>
-                                          field.onChange(checked ? 1 : 0)
-                                        }
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={form.control}
-                                name="wmm_enabled"
-                                render={({ field }) => (
-                                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                                    <div className="space-y-0.5">
-                                      <FormLabel className="text-base flex items-center gap-2">
-                                        <Signal className="w-4 h-4" />
-                                        WMM (QoS)
-                                      </FormLabel>
-                                      <FormDescription>
-                                        启用 WiFi 多媒体
-                                      </FormDescription>
-                                    </div>
-                                    <FormControl>
-                                      <Switch
-                                        checked={field.value === 1}
-                                        onCheckedChange={(checked) =>
-                                          field.onChange(checked ? 1 : 0)
-                                        }
-                                      />
-                                    </FormControl>
+                                  <FormItem>
+                                    <FormLabel className="flex items-center gap-2">
+                                      <Radio className="w-4 h-4 text-primary" />
+                                      信道
+                                    </FormLabel>
+                                    <Select
+                                      onValueChange={(value) => field.onChange(Number(value))}
+                                      value={field.value.toString()}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="选择信道" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        {availableChannels.map((channel) => (
+                                          <SelectItem
+                                            key={channel}
+                                            value={channel.toString()}
+                                          >
+                                            信道 {channel}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <FormDescription>
+                                      选择无线网络的工作信道
+                                    </FormDescription>
+                                    <FormMessage />
                                   </FormItem>
                                 )}
                               />
                             </motion.div>
-                          </motion.div>
-                        )}
-                      </motion.div>
-                    </motion.form>
-                  </Form>
-                </TabsContent>
-              </div>
-            </Tabs>
+                          )}
+                        </motion.div>
+                      </form>
+                    </Form>
+                  </TabsContent>
 
-            {status === "error" && (
-              <Alert variant="destructive" className="mt-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>错误</AlertTitle>
-                <AlertDescription>接入点配置出现问题</AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-
-          <CardFooter className="border-t px-6 py-4">
-            <Button
-              type="submit"
-              className="w-full sm:w-auto ml-auto"
-              onClick={form.handleSubmit(onSubmit)}
-              disabled={isLoading}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              保存配置
-            </Button>
-          </CardFooter>
-        </Card>
-      </motion.div>
-
-      {/* 网络统计卡片 */}
-      <motion.div
-        className="w-full"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.1 }}
-      >
-        <Card>
-          <CardHeader className="py-4">
-            <CardTitle className="text-lg">网络统计</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <motion.div
-                  className="p-3 rounded-lg border bg-muted/30"
-                  whileHover={{ scale: 1.02 }}
-                  transition={{ type: "spring", stiffness: 300 }}
-                >
-                  <p className="text-sm text-muted-foreground">已连接设备</p>
-                  <p className="text-2xl font-bold mt-1">
-                    {connectionStats.connectedDevices}
-                  </p>
-                </motion.div>
-
-                <motion.div
-                  className="p-3 rounded-lg border bg-muted/30"
-                  whileHover={{ scale: 1.02 }}
-                  transition={{ type: "spring", stiffness: 300 }}
-                >
-                  <p className="text-sm text-muted-foreground">网络负载</p>
-                  <p className="text-2xl font-bold mt-1">
-                    {connectionStats.networkLoad}%
-                  </p>
-                </motion.div>
-
-                <motion.div
-                  className="p-3 rounded-lg border bg-muted/30"
-                  whileHover={{ scale: 1.02 }}
-                  transition={{ type: "spring", stiffness: 300 }}
-                >
-                  <p className="text-sm text-muted-foreground">信号强度</p>
-                  <p className="text-2xl font-bold mt-1">
-                    {connectionStats.signalStrength}%
-                  </p>
-                </motion.div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">网络负载</span>
-                  <span className="font-medium">
-                    {connectionStats.networkLoad}%
-                  </span>
-                </div>
-                <Progress value={connectionStats.networkLoad} className="h-2" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-    </div>
-  );
-}
+                  <TabsContent value="security">
+                    <Form {...form}>
+                      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                        <motion.div
+                          variants={slideAnimation}
+                          initial="initial"
+                          animate="animate"
+                          className="grid gap-6"
+                        >
+                          <FormField
+                            control={control}
+                            name="wpa_passphrase"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2">
+                                  <Lock className="w-4 h-4 text-primary" />
+                                  安全密码
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                   laceholder="输入安全密码..."
+                                    ..field}
+                                    assName={cn(
+                                    "transition-all duration-200",

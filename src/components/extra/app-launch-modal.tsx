@@ -48,11 +48,11 @@ const animationVariants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: { duration: 0.2 },
+      transition: { duration: 0.3, ease: "easeOut" },
     },
     exit: {
       opacity: 0,
-      transition: { duration: 0.2 },
+      transition: { duration: 0.2, ease: "easeIn" },
     },
   },
   modal: {
@@ -67,14 +67,14 @@ const animationVariants = {
       y: 0,
       transition: {
         type: "spring",
-        damping: 25,
-        stiffness: 300,
+        damping: 30,
+        stiffness: 350,
       },
     },
     exit: {
-      scale: 0.95,
+      scale: 0.98,
       opacity: 0,
-      y: 20,
+      y: 10,
       transition: { duration: 0.2 },
     },
   },
@@ -85,16 +85,36 @@ const animationVariants = {
       y: 0,
       transition: {
         type: "spring",
-        damping: 20,
-        stiffness: 200,
+        damping: 25,
+        stiffness: 250,
       },
     },
-    exit: { opacity: 0, y: -20 },
+    exit: { 
+      opacity: 0, 
+      y: -20,
+      transition: {
+        duration: 0.2,
+      },
+    },
+  },
+  icon: {
+    pulse: {
+      scale: [1, 1.05, 1],
+      transition: {
+        duration: 2,
+        repeat: Infinity,
+        ease: "easeInOut",
+      },
+    },
   },
 };
 
 const LoadingIcon = memo(({ icon, name }: { icon: string; name: string }) => (
-  <div className="relative w-16 h-16">
+  <motion.div 
+    className="relative w-16 h-16"
+    variants={animationVariants.icon}
+    animate="pulse"
+  >
     <Image
       src={icon}
       alt={name}
@@ -105,10 +125,17 @@ const LoadingIcon = memo(({ icon, name }: { icon: string; name: string }) => (
     />
     <motion.div
       className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-transparent rounded-2xl"
-      animate={{ opacity: [0.5, 1, 0.5] }}
-      transition={{ duration: 2, repeat: Infinity }}
+      animate={{ 
+        opacity: [0.3, 0.6, 0.3],
+        rotate: [0, 180, 360],
+      }}
+      transition={{ 
+        duration: 3,
+        repeat: Infinity,
+        ease: "linear",
+      }}
     />
-  </div>
+  </motion.div>
 ));
 
 LoadingIcon.displayName = "LoadingIcon";
@@ -121,21 +148,61 @@ const LoadingProgress = memo(({ progress }: { progress: number }) => (
     exit="exit"
     className="space-y-3 w-full max-w-md"
   >
-    <Progress
-      value={progress}
-      className={cn(
-        "h-1.5 transition-all duration-300",
-        progress >= 100 && "bg-green-500"
-      )}
-    />
-    <div className="flex items-center justify-between text-sm text-muted-foreground">
-      <span>正在启动应用</span>
-      <span>{progress.toFixed(0)}%</span>
+    <div className="relative">
+      <Progress
+        value={progress}
+        className={cn(
+          "h-1.5 transition-all duration-500",
+          progress >= 100 ? "bg-green-500" : "bg-primary"
+        )}
+      />
+      <motion.div
+        className="absolute top-0 left-0 right-0 h-full overflow-hidden"
+        initial={{ width: "0%" }}
+        animate={{ width: `${progress}%` }}
+        transition={{ duration: 0.3 }}
+      >
+        <div className="w-full h-full bg-gradient-to-r from-primary/20 to-transparent" />
+      </motion.div>
+    </div>
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-muted-foreground">正在启动应用</span>
+      <motion.span
+        key={progress}
+        initial={{ opacity: 0, y: 5 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={cn(
+          "font-medium transition-colors duration-300",
+          progress >= 100 ? "text-green-500" : "text-primary"
+        )}
+      >
+        {progress.toFixed(0)}%
+      </motion.span>
     </div>
   </motion.div>
 ));
 
 LoadingProgress.displayName = "LoadingProgress";
+
+const KeyboardShortcuts = memo(() => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    transition={{ delay: 1 }}
+    className="absolute bottom-4 right-4 flex items-center gap-2 text-xs text-muted-foreground"
+  >
+    <div className="flex items-center gap-1">
+      <kbd className="px-2 py-1 rounded bg-muted border">ESC</kbd>
+      <span>关闭</span>
+    </div>
+    <div className="flex items-center gap-1">
+      <kbd className="px-2 py-1 rounded bg-muted border">F11</kbd>
+      <span>全屏</span>
+    </div>
+  </motion.div>
+));
+
+KeyboardShortcuts.displayName = "KeyboardShortcuts";
 
 // 定义一个函数来获取错误消息
 const getErrorMessage = (error: string | null): string => {
@@ -143,7 +210,7 @@ const getErrorMessage = (error: string | null): string => {
   return error;
 };
 
-export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
+export const AppLaunchModal = memo(({ app, onClose }: AppLaunchModalProps) => {
   const {
     retryCount,
     maxRetries,
@@ -172,12 +239,19 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
   useEffect(() => {
     if (app?.url) {
       const link = document.createElement("link");
-      link.rel = "preload";
-      link.as = "document";
-      link.href = app.url;
+      link.rel = "preconnect";
+      link.href = new URL(app.url).origin;
       document.head.appendChild(link);
+
+      const preload = document.createElement("link");
+      preload.rel = "preload";
+      preload.as = "document";
+      preload.href = app.url;
+      document.head.appendChild(preload);
+
       return () => {
         document.head.removeChild(link);
+        document.head.removeChild(preload);
       };
     }
   }, [app?.url]);
@@ -316,12 +390,17 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
     () => (
       <Badge
         variant={isOnline ? "secondary" : "destructive"}
-        className="absolute left-3 top-3 z-10"
+        className={cn(
+          "absolute left-3 top-3 z-10",
+          "transition-all duration-300",
+          "flex items-center gap-1.5",
+          "bg-background/80 backdrop-blur-sm"
+        )}
       >
         {isOnline ? (
-          <Wifi className="h-3.5 w-3.5 mr-1" />
+          <Wifi className="h-3.5 w-3.5" />
         ) : (
-          <WifiOff className="h-3.5 w-3.5 mr-1" />
+          <WifiOff className="h-3.5 w-3.5" />
         )}
         {isOnline ? "已连接" : "已断开"}
       </Badge>
@@ -352,8 +431,10 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
           className={cn(
             "w-full relative mx-4",
             isFullscreen ? "max-w-none min-h-screen" : "max-w-4xl min-h-[80vh]",
-            "bg-card/95 backdrop-blur-xl border border-border/50",
-            "rounded-xl shadow-2xl transition-all duration-300"
+            "bg-card/95 backdrop-blur-xl",
+            "border border-primary/10",
+            "rounded-xl shadow-2xl",
+            "transition-all duration-500"
           )}
         >
           <Card className="h-full">
@@ -362,7 +443,12 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="rounded-full opacity-75 hover:opacity-100 transition-opacity"
+                className={cn(
+                  "rounded-full",
+                  "opacity-75 hover:opacity-100",
+                  "transition-all duration-300",
+                  "hover:bg-primary/10"
+                )}
                 onClick={toggleFullscreen}
               >
                 {isFullscreen ? (
@@ -374,7 +460,12 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="rounded-full opacity-75 hover:opacity-100 transition-opacity"
+                className={cn(
+                  "rounded-full",
+                  "opacity-75 hover:opacity-100",
+                  "transition-all duration-300",
+                  "hover:bg-destructive/10 hover:text-destructive"
+                )}
                 onClick={onClose}
               >
                 <X className="h-4 w-4" />
@@ -389,12 +480,24 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
                 exit="exit"
                 className="flex flex-col items-center justify-center h-full p-6 space-y-6"
               >
-                <AlertCircle
-                  className={cn(
-                    "h-16 w-16 text-destructive animate-pulse",
-                    !isOnline && "text-yellow-500"
-                  )}
-                />
+                <motion.div
+                  animate={{
+                    scale: [1, 1.1, 1],
+                    opacity: [0.5, 1, 0.5],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                >
+                  <AlertCircle
+                    className={cn(
+                      "h-16 w-16",
+                      !isOnline ? "text-yellow-500" : "text-destructive"
+                    )}
+                  />
+                </motion.div>
                 <div className="text-center space-y-2">
                   <h2
                     className={cn(
@@ -423,7 +526,11 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
                         onClose();
                       }
                     }}
-                    className="min-w-[120px]"
+                    className={cn(
+                      "min-w-[120px]",
+                      "transition-all duration-300",
+                      "hover:bg-primary/5"
+                    )}
                     disabled={!isOnline || retryCount >= maxRetries}
                   >
                     <RotateCw
@@ -458,6 +565,7 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
                 <LoadingIcon icon={app.icon} name={app.name} />
                 <h2 className="text-2xl font-bold text-center">{app.name}</h2>
                 <LoadingProgress progress={progress} />
+                <KeyboardShortcuts />
               </motion.div>
             ) : (
               <>
@@ -502,7 +610,11 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
                           variant="outline"
                           size="sm"
                           onClick={() => window.location.reload()}
-                          className="min-w-[100px]"
+                          className={cn(
+                            "min-w-[100px]",
+                            "transition-all duration-300",
+                            "hover:bg-primary/5"
+                          )}
                         >
                           <RotateCw className="mr-2 h-4 w-4" />
                           重试
@@ -559,7 +671,13 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
                 {isMonitoring && (
                   <PerformanceStats
                     metrics={metrics}
-                    className="absolute bottom-4 left-4 max-w-[300px]"
+                    className={cn(
+                      "absolute bottom-4 left-4 max-w-[300px]",
+                      "bg-background/80 backdrop-blur-sm",
+                      "border border-primary/10",
+                      "rounded-lg shadow-lg",
+                      "transition-all duration-300"
+                    )}
                   />
                 )}
               </>
@@ -569,4 +687,6 @@ export function AppLaunchModal({ app, onClose }: AppLaunchModalProps) {
       </motion.div>
     </AnimatePresence>
   );
-}
+});
+
+AppLaunchModal.displayName = "AppLaunchModal";

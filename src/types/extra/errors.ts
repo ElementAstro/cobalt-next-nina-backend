@@ -3,14 +3,25 @@ export interface CustomError extends Error {
   details?: unknown;
 }
 
+export type IframeErrorType = 
+  | 'load' 
+  | 'security' 
+  | 'network' 
+  | 'timeout' 
+  | 'permission'
+  | 'compatibility'
+  | 'resource'
+  | 'server'
+  | 'unknown';
+
 export interface IframeError extends CustomError {
-  type: 'load' | 'security' | 'network' | 'timeout' | 'unknown';
+  type: IframeErrorType;
   url?: string;
   timestamp: number;
 }
 
 export class CustomIframeError extends Error implements IframeError {
-  type: IframeError['type'];
+  type: IframeErrorType;
   url?: string;
   timestamp: number;
   code?: string;
@@ -18,7 +29,7 @@ export class CustomIframeError extends Error implements IframeError {
 
   constructor(
     message: string,
-    type: IframeError['type'] = 'unknown',
+    type: IframeErrorType = 'unknown',
     options?: {
       url?: string;
       code?: string;
@@ -63,6 +74,38 @@ export class CustomIframeError extends Error implements IframeError {
       '网络错误',
       'network',
       { url, code: 'NETWORK_ERROR' }
+    );
+  }
+
+  static permission(url: string): CustomIframeError {
+    return new CustomIframeError(
+      '权限不足',
+      'permission',
+      { url, code: 'PERMISSION_DENIED' }
+    );
+  }
+
+  static compatibility(url: string): CustomIframeError {
+    return new CustomIframeError(
+      '兼容性问题',
+      'compatibility',
+      { url, code: 'COMPATIBILITY_ERROR' }
+    );
+  }
+
+  static resource(url: string): CustomIframeError {
+    return new CustomIframeError(
+      '资源加载失败',
+      'resource',
+      { url, code: 'RESOURCE_ERROR' }
+    );
+  }
+
+  static server(url: string): CustomIframeError {
+    return new CustomIframeError(
+      '服务器错误',
+      'server',
+      { url, code: 'SERVER_ERROR' }
     );
   }
 

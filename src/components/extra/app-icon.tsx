@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo, useCallback } from "react";
 import {
   Pin,
   Trash2,
@@ -14,7 +14,7 @@ import {
   FolderPlus,
   Star,
   Zap,
-  LayoutGrid,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 
+// 动画变体配置
 const animationVariants = {
   icon: {
     hover: {
@@ -97,6 +98,24 @@ const animationVariants = {
       scale: 0.95,
     },
   },
+  menu: {
+    enter: {
+      opacity: 1,
+      scale: 1,
+      transition: {
+        type: "spring",
+        stiffness: 300,
+        damping: 20,
+      },
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.95,
+      transition: {
+        duration: 0.2,
+      },
+    },
+  },
 };
 
 interface App {
@@ -110,7 +129,7 @@ interface App {
 interface AppIconProps {
   id: string;
   name: string;
-  icon: string;
+  icon: string;  
   isPinned: boolean;
   onPin: () => void;
   onLaunch: (app: App) => void;
@@ -135,7 +154,7 @@ interface AppIconProps {
   };
 }
 
-export function AppIcon({
+export const AppIcon = memo(({
   id,
   name,
   icon,
@@ -158,21 +177,34 @@ export function AppIcon({
   onShare,
   onAddToWorkspace,
   stats,
-}: AppIconProps) {
+}: AppIconProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(name);
   const [isHovered, setIsHovered] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleEdit = () => {
+  const handleEdit = useCallback(() => {
     setIsEditing(true);
-  };
+  }, []);
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     if (editedName.trim() !== "") {
       onEdit(editedName);
       setIsEditing(false);
     }
-  };
+  }, [editedName, onEdit]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    switch (e.key) {
+      case "Enter":
+        handleSave();
+        break;
+      case "Escape":
+        setIsEditing(false);
+        setEditedName(name);
+        break;
+    }
+  }, [handleSave, name]);
 
   const getCategoryIcon = () => {
     switch (category) {
@@ -201,11 +233,15 @@ export function AppIcon({
                 whileTap="tap"
                 variants={animationVariants.card}
                 className={cn(
-                  "relative group transition-all duration-200",
+                  "relative group",
+                  "transition-all duration-300",
+                  "bg-background/60 backdrop-blur-sm",
+                  "border border-primary/10",
+                  "shadow-lg hover:shadow-xl",
                   isCompact ? "p-1.5" : "p-2",
                   view === "list" && "max-w-md",
                   isSelected && "ring-2 ring-primary ring-offset-2 dark:ring-offset-background",
-                  "rounded-lg hover:bg-accent/5 dark:hover:bg-accent/10"
+                  "rounded-xl hover:bg-accent/5 dark:hover:bg-accent/10"
                 )}
                 style={{
                   width: view === "list" ? "100%" : size,
@@ -213,6 +249,14 @@ export function AppIcon({
                 }}
                 onHoverStart={() => setIsHovered(true)}
                 onHoverEnd={() => setIsHovered(false)}
+                role="button"
+                tabIndex={0}
+                aria-label={`${name} 应用图标`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    onLaunch({ id, name, icon, isPinned, category });
+                  }
+                }}
               >
                 {isSelectionMode && (
                   <motion.div
@@ -248,7 +292,12 @@ export function AppIcon({
                         <Button
                           variant="secondary"
                           size="icon"
-                          className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-lg"
+                          className={cn(
+                            "h-8 w-8 rounded-full",
+                            "bg-background/80 backdrop-blur-sm",
+                            "shadow-lg hover:shadow-xl",
+                            "transition-all duration-300"
+                          )}
                           onClick={(e) => {
                             e.stopPropagation();
                             onFavorite?.();
@@ -271,7 +320,7 @@ export function AppIcon({
                   className={cn(
                     "w-full h-auto flex items-center gap-2 p-2 rounded-lg",
                     "hover:bg-accent/5 dark:hover:bg-accent/10",
-                    "transition-all duration-200",
+                    "transition-all duration-300",
                     view === "grid" ? "flex-col" : "flex-row justify-start",
                     className
                   )}
@@ -284,12 +333,20 @@ export function AppIcon({
                       view === "grid" ? "w-12 h-12" : "w-8 h-8"
                     )}
                   >
+                    {isLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      </div>
+                    )}
                     <div className="relative w-full h-full group-hover:scale-105 transition-transform">
                       <Image
                         src={icon}
                         alt={name}
                         fill
                         className="object-contain rounded-md"
+                        onLoad={() => setIsLoading(false)}
+                        onError={() => setIsLoading(false)}
+                        loading="lazy"
                       />
                       <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-background shadow-sm">
                         {getCategoryIcon()}
@@ -315,16 +372,13 @@ export function AppIcon({
                       value={editedName}
                       onChange={(e) => setEditedName(e.target.value)}
                       onBlur={handleSave}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          handleSave();
-                        }
-                      }}
+                      onKeyDown={handleKeyDown}
                       autoFocus
                       className={cn(
                         "text-sm text-center w-full",
                         "focus:ring-2 focus:ring-primary",
-                        "transition-all duration-200"
+                        "transition-all duration-300",
+                        "bg-background/60 backdrop-blur-sm"
                       )}
                     />
                   ) : (
@@ -343,7 +397,14 @@ export function AppIcon({
 
                   {showStats && stats && view === "list" && (
                     <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="secondary" className="h-5 px-1.5">
+                      <Badge 
+                        variant="secondary" 
+                        className={cn(
+                          "h-5 px-1.5",
+                          "bg-primary/10 hover:bg-primary/20",
+                          "transition-colors duration-300"
+                        )}
+                      >
                         <Zap className="mr-1 h-3 w-3" />
                         {stats.usageCount}
                       </Badge>
@@ -364,7 +425,14 @@ export function AppIcon({
           </Tooltip>
         </ContextMenuTrigger>
 
-        <ContextMenuContent className="w-48">
+        <ContextMenuContent 
+          className={cn(
+            "w-48",
+            "bg-background/95 backdrop-blur-md",
+            "border border-primary/10",
+            "shadow-xl"
+          )}
+        >
           <ContextMenuItem
             className="flex items-center"
             onClick={() => onLaunch({ id, name, icon, isPinned, category })}
@@ -431,7 +499,11 @@ export function AppIcon({
           <ContextMenuSeparator />
 
           <ContextMenuItem
-            className="flex items-center text-destructive focus:text-destructive"
+            className={cn(
+              "flex items-center",
+              "text-destructive focus:text-destructive",
+              "hover:bg-destructive/10"
+            )}
             onClick={onDelete}
           >
             <Trash2 className="mr-2 h-4 w-4" />
@@ -441,4 +513,6 @@ export function AppIcon({
       </ContextMenu>
     </TooltipProvider>
   );
-}
+});
+
+AppIcon.displayName = "AppIcon";
