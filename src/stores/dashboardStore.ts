@@ -150,6 +150,28 @@ useCameraStore.subscribe((state) => {
   }
 });
 
+export interface ViewerState {
+  exposure: number;
+  highlights: number;
+  shadows: number;
+  sharpness: number;
+  histogramEnabled: boolean;
+  aspectRatio: string;
+  gridType: string;
+  colorTemperature: number;
+  tint: number;
+  setExposure: (value: number) => void;
+  setHighlights: (value: number) => void;
+  setShadows: (value: number) => void;
+  setSharpness: (value: number) => void;
+  setHistogramEnabled: (enabled: boolean) => void;
+  setAspectRatio: (ratio: string) => void;
+  setGridType: (type: string) => void;
+  setColorTemperature: (value: number) => void;
+  setTint: (value: number) => void;
+  resetAll: () => void;
+}
+
 export interface ViewerSettings {
   zoom: number;
   brightness: number;
@@ -173,7 +195,7 @@ interface CameraState extends ViewerSettings {
   setImages: (images: string[]) => void;
 }
 
-export const useViewerStore = create<CameraState>((set) => ({
+export const useViewerStore = create<CameraState & ViewerState>((set) => ({
   zoom: 1,
   brightness: 100,
   contrast: 100,
@@ -182,15 +204,49 @@ export const useViewerStore = create<CameraState>((set) => ({
   whiteBalance: "Auto",
   focusPoint: { x: 50, y: 50 },
   images: [],
-  setImages: (images) => set({ images }),
-  setZoom: (zoom) => set({ zoom }),
-  setBrightness: (brightness) => set({ brightness }),
-  setContrast: (contrast) => set({ contrast }),
-  setSaturation: (saturation) => set({ saturation }),
-  setRotation: (rotation) => set({ rotation }),
-  setWhiteBalance: (whiteBalance) => set({ whiteBalance }),
-  setFocusPoint: (focusPoint) => set({ focusPoint }),
-  resetSettings: (settings) => set((state) => ({ ...state, ...settings })),
+  setImages: (images: string[]) => set({ images }),
+  setZoom: (zoom: number) => set({ zoom }),
+  setBrightness: (brightness: number) => set({ brightness }),
+  setContrast: (contrast: number) => set({ contrast }),
+  setSaturation: (saturation: number) => set({ saturation }),
+  setRotation: (rotation: number) => set({ rotation }),
+  setWhiteBalance: (whiteBalance: string) => set({ whiteBalance }),
+  setFocusPoint: (focusPoint: { x: number; y: number }) => set({ focusPoint }),
+  resetSettings: (settings: Partial<ViewerSettings>) =>
+    set((state: CameraState & ViewerState) => ({ ...state, ...settings })),
+  exposure: 0,
+  highlights: 0,
+  shadows: 0,
+  sharpness: 0,
+  histogramEnabled: false,
+  aspectRatio: "free",
+  gridType: "thirds",
+  colorTemperature: 6500, // 默认为日光色温
+  tint: 0,
+  setExposure: (value: number) => set({ exposure: value }),
+  setHighlights: (value: number) => set({ highlights: value }),
+  setShadows: (value: number) => set({ shadows: value }),
+  setSharpness: (value: number) => set({ sharpness: value }),
+  setHistogramEnabled: (enabled: boolean) => set({ histogramEnabled: enabled }),
+  setAspectRatio: (ratio: string) => set({ aspectRatio: ratio }),
+  setGridType: (type: string) => set({ gridType: type }),
+  setColorTemperature: (value: number) => set({ colorTemperature: value }),
+  setTint: (value: number) => set({ tint: value }),
+  resetAll: () =>
+    set({
+      zoom: 1,
+      brightness: 100,
+      contrast: 100,
+      saturation: 100,
+      rotation: 0,
+      exposure: 0,
+      highlights: 0,
+      shadows: 0,
+      sharpness: 0,
+      focusPoint: { x: 50, y: 50 },
+      colorTemperature: 6500,
+      tint: 0,
+    }),
 }));
 
 export interface Location {

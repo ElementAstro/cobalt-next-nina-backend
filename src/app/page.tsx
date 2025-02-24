@@ -8,7 +8,6 @@ import {
   PointerSensor,
 } from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
-import { motion, AnimatePresence } from "framer-motion";
 import CameraViewfinder from "@/components/dashboard/camera-view";
 import ExposureControls from "@/components/dashboard/right-sidebar";
 import Sidebar, { SidebarItem } from "@/components/dashboard/left-sidebar";
@@ -31,6 +30,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useExposureStore, useViewerStore } from "@/stores/dashboardStore";
+import { ClientInfo } from "@/components/dashboard/client/client-info";
 
 export default function Dashboard() {
   const [devices, setDevices] = useState<SidebarItem[]>([
@@ -241,6 +241,8 @@ export default function Dashboard() {
 
   const renderSheetContent = () => {
     switch (sheetDevice) {
+      case "clientInfo":
+        return <ClientInfo />;
       case "telescope":
         return <TelescopePage />;
       case "focuser":
@@ -254,6 +256,23 @@ export default function Dashboard() {
     }
   };
 
+  const getSheetTitle = () => {
+    switch (sheetDevice) {
+      case "clientInfo":
+        return "系统信息";
+      case "telescope":
+        return "望远镜控制";
+      case "focuser":
+        return "调焦控制";
+      case "filterWheel":
+        return "滤镜轮控制";
+      case "camera":
+        return "相机控制";
+      default:
+        return "设备设置";
+    }
+  };
+
   return (
     <>
       <ErrorBoundary>
@@ -264,67 +283,70 @@ export default function Dashboard() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
+          <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
             <TopBar onOpenOffcanvas={handleOpenSheet} />
             <div className="flex flex-1 overflow-hidden">
-              <Sidebar devices={devices} onToggle={toggleDevice} />
-              <div className="flex-1 relative overflow-hidden">
-                {!activeDevice && <CameraViewfinder />}
-                <AnimatePresence>
-                  {activeDevice && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 0.3 }}
-                    ></motion.div>
-                  )}
-                </AnimatePresence>
+              {/* 左侧边栏 */}
+              <div className="w-16 border-r border-border bg-muted/50">
+                <Sidebar devices={devices} onToggle={toggleDevice} />
               </div>
-              <motion.div
-                className="w-20 border-l border-gray-700"
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5 }}
-              >
-                <ExposureControls
-                  settings={exposureSettings}
-                  onParameterClick={handleParameterClick}
-                  onCapture={handleCapture}
-                  onPause={handlePause}
-                  isShooting={isShooting}
-                  isPaused={isPaused}
-                  progress={progress}
-                  onLoadPreset={handleLoadPreset}
-                  onSavePreset={handleSavePreset}
-                />
-              </motion.div>
-            </div>
-            {capturedImages.length > 0 && (
-              <div className="p-4 flex space-x-4 overflow-auto bg-gray-800">
-                {capturedImages.map((img, idx) => (
-                  <img
-                    key={idx}
-                    src={img}
-                    alt={`Captured ${idx}`}
-                    className="w-24 h-24 object-cover rounded"
+
+              {/* 主内容区域 */}
+              <div className="flex-1 relative overflow-hidden flex">
+                {/* 相机视场区域 */}
+                <div className="flex-1">
+                  <CameraViewfinder />
+                </div>
+
+                {/* 右侧控制面板 */}
+                <div className="w-72 border-l border-border bg-muted/50 p-4">
+                  <ExposureControls
+                    settings={exposureSettings}
+                    onParameterClick={handleParameterClick}
+                    onCapture={handleCapture}
+                    onPause={handlePause}
+                    isShooting={isShooting}
+                    isPaused={isPaused}
+                    progress={progress}
+                    onLoadPreset={handleLoadPreset}
+                    onSavePreset={handleSavePreset}
                   />
-                ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 底部缩略图栏 */}
+            {capturedImages.length > 0 && (
+              <div className="h-24 border-t border-border bg-muted/50">
+                <div className="flex items-center h-full p-2 space-x-2 overflow-x-auto">
+                  {capturedImages.map((img, idx) => (
+                    <img
+                      key={idx}
+                      src={img}
+                      alt={`Captured ${idx}`}
+                      className="h-full aspect-square object-cover rounded-md hover:ring-2 ring-primary cursor-pointer"
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>
+
+          {/* 设备控制面板 */}
           <Sheet open={sheetOpen} onOpenChange={handleCloseSheet}>
             <SheetContent
               side={isMobile ? "bottom" : "right"}
-              className={`p-4 ${isMobile ? "w-full h-full" : "w-[480px]"}`}
+              className="p-4 w-[480px]"
             >
               <SheetHeader>
-                <SheetTitle>设备设置</SheetTitle>
+                <SheetTitle>{getSheetTitle()}</SheetTitle>
                 <SheetDescription>
-                  在这里你可以调整设备的各项参数。
+                  {sheetDevice === "clientInfo"
+                    ? "查看系统和设备的详细信息"
+                    : "在这里你可以调整设备参数"}
                 </SheetDescription>
               </SheetHeader>
-              {sheetDevice && renderSheetContent()}
+              {renderSheetContent()}
               <SheetClose asChild>
                 <Button variant="ghost">关闭</Button>
               </SheetClose>

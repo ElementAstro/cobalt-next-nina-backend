@@ -1,35 +1,16 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import {
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Camera,
-  Grid3X3,
-  Loader2,
-  Image as ImageIcon,
-  Settings,
-} from "lucide-react";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
-} from "@/components/ui/tooltip";
-import { Label } from "@/components/ui/label";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { AnimatePresence } from "framer-motion";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useViewerStore } from "@/stores/dashboardStore";
 import { LightBox } from "./lightbox";
 import { toast } from "@/hooks/use-toast";
 import html2canvas from "html2canvas";
+import { Viewfinder } from "./viewer/viewfinder";
+import { ControlBar } from "./viewer/control-bar";
+import { SettingsPanel } from "./viewer/settings-panel";
+import { Histogram } from "./viewer/histogram";
 
 export default function CameraViewfinder() {
   const {
@@ -39,6 +20,11 @@ export default function CameraViewfinder() {
     saturation,
     rotation,
     focusPoint,
+    // 添加新的状态
+    colorTemperature,
+    tint,
+    setColorTemperature,
+    setTint,
     setZoom,
     setBrightness,
     setContrast,
@@ -46,6 +32,18 @@ export default function CameraViewfinder() {
     setRotation,
     setFocusPoint,
     images,
+    exposure,
+    highlights,
+    shadows,
+    sharpness,
+    histogramEnabled,
+    gridType,
+    setExposure,
+    setHighlights,
+    setShadows,
+    setSharpness,
+    setHistogramEnabled,
+    resetAll,
   } = useViewerStore();
 
   const viewfinderRef = useRef<HTMLDivElement>(null);
@@ -243,254 +241,111 @@ export default function CameraViewfinder() {
     };
   }, []);
 
-  const openLightBox = () => {
-    setIsLightBoxOpen(true);
-  };
+  // 使用 react-hotkeys-hook 替换原有快捷键
+  useHotkeys("=", handleZoomIn, [zoom]);
+  useHotkeys("-", handleZoomOut, [zoom]);
+  useHotkeys("r", handleRotate, [rotation]);
+  useHotkeys("space", handleStartCapture, []);
+  useHotkeys("g", () => setShowGrid(!showGrid), [showGrid]);
+  useHotkeys("s", () => setShowSettings(!showSettings), [showSettings]);
+  useHotkeys("escape", resetAll, []);
 
-  const closeLightBox = () => {
-    setIsLightBoxOpen(false);
-  };
+  const handleZoomChange = useCallback((newZoom: number) => {
+    setZoom(newZoom);
+  }, [setZoom]);
+
+  const handleRotationChange = useCallback((newRotation: number) => {
+    setRotation(newRotation);
+  }, [setRotation]);
 
   return (
     <div className="relative h-[calc(100vh-3rem)] flex flex-col">
-      {/* Viewfinder with improved aspect ratio */}
-      <div
-        ref={viewfinderRef}
-        className="relative flex-1 overflow-hidden bg-black cursor-crosshair"
+      <Viewfinder
+        viewfinderRef={viewfinderRef}
+        zoom={zoom}
+        rotation={rotation}
+        brightness={brightness}
+        contrast={contrast}
+        saturation={saturation}
+        showGrid={showGrid}
+        streamActive={streamActive}
+        currentImage={currentImage}
+        focusPoint={focusPoint}
         onClick={handleViewfinderClick}
-        style={{
-          transform: `scale(${zoom}) rotate(${rotation}deg)`,
-          filter: `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`,
-        }}
-      >
-        {/* 预览图像或实时流 */}
-        {streamActive && currentImage && (
-          <div className="absolute inset-0">
-            <img
-              src={currentImage}
-              alt="Camera Preview"
-              className="w-full h-full object-cover"
-            />
-          </div>
-        )}
+        highlights={highlights}
+        shadows={shadows}
+        sharpness={sharpness}
+        gridType={gridType}
+        colorTemperature={colorTemperature}
+        tint={tint}
+        onZoomChange={handleZoomChange}
+        onRotationChange={handleRotationChange}
+      />
 
-        {/* Grid Overlay */}
-        {showGrid && (
-          <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 border border-white/20">
-            {[...Array(9)].map((_, i) => (
-              <div key={i} className="border border-white/20" />
-            ))}
-          </div>
-        )}
-
-        {/* Focus Point Indicator */}
-        <div
-          className="absolute w-4 h-4 border-2 border-red-500 rounded-full"
-          style={{
-            left: `${focusPoint.x}%`,
-            top: `${focusPoint.y}%`,
-            transform: "translate(-50%, -50%)",
-          }}
+      {histogramEnabled && viewfinderRef.current && (
+        <Histogram
+          imageData={getImageData(viewfinderRef.current)}
+          className="absolute bottom-16 right-4"
         />
-      </div>
+      )}
 
-      {/* Compact Controls Bar */}
-      <div className="h-12 bg-gray-900/90 backdrop-blur-sm flex items-center justify-between px-2 border-t border-gray-700/50">
-        <div className="flex items-center gap-1.5">
-          {/* Zoom Controls */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleZoomOut}
-                  disabled={zoom <= 0.5}
-                >
-                  <ZoomOut className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>缩小</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+      <ControlBar
+        zoom={zoom}
+        isCapturing={isCapturing}
+        showGrid={showGrid}
+        showSettings={showSettings}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onRotate={handleRotate}
+        onToggleGrid={() => setShowGrid(!showGrid)}
+        onCapture={handleStartCapture}
+        onOpenLightBox={() => setIsLightBoxOpen(true)}
+        onToggleSettings={() => setShowSettings(!showSettings)}
+      />
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleZoomIn}
-                  disabled={zoom >= 3}
-                >
-                  <ZoomIn className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>放大</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
+      <SettingsPanel
+        showSettings={showSettings}
+        setShowSettings={setShowSettings}
+        brightness={brightness}
+        contrast={contrast}
+        saturation={saturation}
+        onBrightnessChange={setBrightness}
+        onContrastChange={setContrast}
+        onSaturationChange={setSaturation}
+        settingsRef={settingsRef}
+        exposure={exposure}
+        highlights={highlights}
+        shadows={shadows}
+        sharpness={sharpness}
+        histogramEnabled={histogramEnabled}
+        onExposureChange={setExposure}
+        onHighlightsChange={setHighlights}
+        onShadowsChange={setShadows}
+        onSharpnessChange={setSharpness}
+        onHistogramToggle={setHistogramEnabled}
+        colorTemperature={colorTemperature}
+        tint={tint}
+        onColorTemperatureChange={(value: number) => {
+          // 将开尔文色温转换为RGB颜色矩阵
+          setColorTemperature(value);
+        }}
+        onTintChange={(value: number) => {
+          // 调整绿色-品红色平衡
+          setTint(value);
+        }}
+      />
 
-        <div className="flex items-center gap-1.5">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setShowGrid(!showGrid)}
-                >
-                  <Grid3X3 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>切换网格</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon" variant="ghost" onClick={handleRotate}>
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>旋转90°</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleStartCapture}
-                  disabled={isCapturing}
-                >
-                  {isCapturing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Camera className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>保存图像</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon" variant="ghost" onClick={openLightBox}>
-                  <ImageIcon className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>查看相册</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </div>
-
-      {/* Settings Panel - More Compact */}
-      <Collapsible open={showSettings} onOpenChange={setShowSettings}>
-        <div ref={settingsRef}>
-          <CollapsibleTrigger className="absolute top-2 right-2 bg-gray-900/90 backdrop-blur-sm p-1.5 rounded-md">
-            <Settings className="h-4 w-4" />
-          </CollapsibleTrigger>
-          <AnimatePresence>
-            {showSettings && (
-              <motion.div
-                initial={{ opacity: 0, x: 50, scale: 0.95 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: 50, scale: 0.95 }}
-                transition={{
-                  duration: 0.2,
-                  ease: "easeInOut",
-                  scale: {
-                    type: "spring",
-                    stiffness: 300,
-                    damping: 20,
-                  },
-                }}
-                className="absolute top-0 right-0 bg-black/50 backdrop-blur-sm p-4 space-y-4"
-              >
-                <CollapsibleContent>
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="brightness"
-                      className="text-sm font-medium text-white"
-                    >
-                      亮度
-                    </Label>
-                    <Slider
-                      id="brightness"
-                      min={0}
-                      max={200}
-                      step={1}
-                      value={[brightness]}
-                      onValueChange={([value]) => setBrightness(value)}
-                      className="w-48"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="contrast"
-                      className="text-sm font-medium text-white"
-                    >
-                      对比度
-                    </Label>
-                    <Slider
-                      id="contrast"
-                      min={0}
-                      max={200}
-                      step={1}
-                      value={[contrast]}
-                      onValueChange={([value]) => setContrast(value)}
-                      className="w-48"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor="saturation"
-                      className="text-sm font-medium text-white"
-                    >
-                      饱和度
-                    </Label>
-                    <Slider
-                      id="saturation"
-                      min={0}
-                      max={200}
-                      step={1}
-                      value={[saturation]}
-                      onValueChange={([value]) => setSaturation(value)}
-                      className="w-48"
-                    />
-                  </div>
-                </CollapsibleContent>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </Collapsible>
-
-      {/* LightBox Component */}
       <AnimatePresence>
         {isLightBoxOpen && (
           <LightBox
-            images={images.map((src) => ({
+            images={images.map((src: string) => ({
               src,
               alt: "Captured image",
               width: 800,
               height: 600,
             }))}
             initialIndex={0}
-            onClose={closeLightBox}
+            onClose={() => setIsLightBoxOpen(false)}
             showThumbnails={true}
             enableZoom={true}
             enableSwipe={true}
@@ -506,4 +361,22 @@ export default function CameraViewfinder() {
       </AnimatePresence>
     </div>
   );
+}
+
+// 修复 getImageData 函数的类型
+function getImageData(element: HTMLDivElement): ImageData {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("无法创建 canvas 上下文");
+
+  const rect = element.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+
+  // 使用正确的类型转换
+  html2canvas(element).then((canvas) => {
+    ctx.drawImage(canvas, 0, 0);
+  });
+
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }

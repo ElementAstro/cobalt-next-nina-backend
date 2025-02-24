@@ -15,6 +15,7 @@ import {
   Battery,
   WifiOff,
   WifiZero,
+  InfoIcon,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import WindowsTaskbarClock from "./topbar-time";
@@ -215,6 +216,37 @@ export default function TopBar({ onOpenOffcanvas }: TopBarProps) {
           <motion.div>
             <TopbarLocation />
           </motion.div>
+        </motion.div>
+
+        {/* Client Info Button */}
+        <motion.div variants={itemVariants}>
+          <HoverCard openDelay={200} closeDelay={100}>
+            <HoverCardTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenOffcanvas("clientInfo")}
+                className="h-8 px-2 hover:bg-gray-800 transition-colors"
+              >
+                <InfoIcon className="h-4 w-4 text-gray-400" />
+                {isShowDeviceName && (
+                  <span className="hidden lg:inline ml-1.5 text-xs text-gray-300">
+                    系统信息
+                  </span>
+                )}
+              </Button>
+            </HoverCardTrigger>
+            <HoverCardContent side="bottom" align="start" className="w-[240px] p-3">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <InfoIcon className="h-5 w-5 text-gray-400" />
+                  <span className="font-medium">系统信息</span>
+                </div>
+                <p className="text-sm text-gray-500">查看系统和设备详细信息</p>
+                <div className="text-xs text-gray-500 mt-2">点击查看详情</div>
+              </div>
+            </HoverCardContent>
+          </HoverCard>
         </motion.div>
 
         {/* Devices Section */}
