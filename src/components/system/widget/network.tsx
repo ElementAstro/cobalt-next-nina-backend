@@ -1,7 +1,7 @@
 // components/widgets/NetworkWidget.jsx
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -23,9 +23,18 @@ import {
 import AnimatedCard from "../animated-card";
 import useSystemStore from "@/stores/system/systemStore";
 import CountUp from "react-countup";
+import { LoadingState } from "../loading-state";
+import { ErrorState } from "../error-state";
 
 export default function NetworkWidget() {
-  const { systemInfo, historicalData, settings } = useSystemStore();
+  const {
+    systemInfo,
+    historicalData,
+    settings,
+    isLoading,
+    error,
+    refreshSystemInfo,
+  } = useSystemStore();
   const [activeTab, setActiveTab] = useState("traffic");
 
   // 格式化字节数
@@ -45,16 +54,51 @@ export default function NetworkWidget() {
   };
 
   // 准备图表数据
-  const chartData = useMemo(() => {
-    return Array.from(
-      { length: historicalData.network.download.length },
-      (_, i) => ({
-        name: i,
-        download: historicalData.network.download[i],
-        upload: historicalData.network.upload[i],
-      })
+  const chartData = Array.from(
+    { length: historicalData.network.download.length },
+    (_, i) => ({
+      name: i,
+      download: historicalData.network.download[i],
+      upload: historicalData.network.upload[i],
+    })
+  );
+
+  if (isLoading) {
+    return (
+      <AnimatedCard>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Network className="h-5 w-5" />
+            <span>网络</span>
+          </CardTitle>
+          <CardDescription>加载中...</CardDescription>
+        </CardHeader>
+        <CardContent className="min-h-[200px] flex items-center justify-center">
+          <LoadingState message="正在获取网络信息..." />
+        </CardContent>
+      </AnimatedCard>
     );
-  }, [historicalData.network]);
+  }
+
+  if (error) {
+    return (
+      <AnimatedCard>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Network className="h-5 w-5" />
+            <span>网络</span>
+          </CardTitle>
+          <CardDescription>获取数据失败</CardDescription>
+        </CardHeader>
+        <CardContent className="min-h-[200px] flex items-center justify-center">
+          <ErrorState
+            message="无法加载网络数据"
+            retryAction={refreshSystemInfo}
+          />
+        </CardContent>
+      </AnimatedCard>
+    );
+  }
 
   return (
     <AnimatedCard>
@@ -90,14 +134,30 @@ export default function NetworkWidget() {
               <TabsContent value="traffic" className="pt-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    className="p-3 rounded-md bg-muted/50"
+                    whileHover={{ scale: 1.03 }}
+                    transition={{ type: "spring", stiffness: 300 }}
+                    className="p-3 rounded-md bg-muted/50 relative overflow-hidden"
                   >
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <motion.div
+                      className="absolute inset-0 bg-green-100/10 dark:bg-green-900/10"
+                      initial={{ x: "-100%" }}
+                      animate={{
+                        x:
+                          historicalData.network.download.length > 0
+                            ? historicalData.network.download[
+                                historicalData.network.download.length - 1
+                              ] > 100000
+                              ? "0%"
+                              : "-70%"
+                            : "-100%",
+                      }}
+                      transition={{ duration: 0.5 }}
+                    />
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1 relative">
                       <ArrowDownToLine className="h-4 w-4 text-green-500" />
                       <span className="text-sm">下载</span>
                     </div>
-                    <div className="font-medium text-lg">
+                    <div className="font-medium text-lg relative">
                       <CountUp
                         end={systemInfo.network.bytesReceived / 1024 / 1024}
                         decimals={2}
@@ -105,21 +165,37 @@ export default function NetworkWidget() {
                         suffix=" MB"
                       />
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground relative">
                       {formatBytes(systemInfo.network.bytesReceived / 5, true)}{" "}
                       (平均)
                     </div>
                   </motion.div>
 
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    className="p-3 rounded-md bg-muted/50"
+                    whileHover={{ scale: 1.03 }}
+                    transition={{ type: "spring", stiffness: 300 }}
+                    className="p-3 rounded-md bg-muted/50 relative overflow-hidden"
                   >
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <motion.div
+                      className="absolute inset-0 bg-blue-100/10 dark:bg-blue-900/10"
+                      initial={{ x: "-100%" }}
+                      animate={{
+                        x:
+                          historicalData.network.upload.length > 0
+                            ? historicalData.network.upload[
+                                historicalData.network.upload.length - 1
+                              ] > 50000
+                              ? "0%"
+                              : "-70%"
+                            : "-100%",
+                      }}
+                      transition={{ duration: 0.5 }}
+                    />
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1 relative">
                       <ArrowUpToLine className="h-4 w-4 text-blue-500" />
                       <span className="text-sm">上传</span>
                     </div>
-                    <div className="font-medium text-lg">
+                    <div className="font-medium text-lg relative">
                       <CountUp
                         end={systemInfo.network.bytesSent / 1024 / 1024}
                         decimals={2}
@@ -127,7 +203,7 @@ export default function NetworkWidget() {
                         suffix=" MB"
                       />
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground relative">
                       {formatBytes(systemInfo.network.bytesSent / 5, true)}{" "}
                       (平均)
                     </div>

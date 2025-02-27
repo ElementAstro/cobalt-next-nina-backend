@@ -81,7 +81,9 @@ interface SystemState {
   settings: Settings;
   loading: boolean;
   error: string | null;
+  isLoading: boolean; // 添加的接口属性
   fetchSystemInfo: () => Promise<void>;
+  refreshSystemInfo: () => Promise<void>; // 添加的接口方法
   updateSettings: (newSettings: Partial<Settings>) => void;
   resetSettings: () => void;
 }
@@ -131,9 +133,10 @@ const useSystemStore = create<SystemState>()(
       settings: defaultSettings,
       loading: false,
       error: null,
+      isLoading: false, // 初始化新增的属性
 
       fetchSystemInfo: async () => {
-        set({ loading: true, error: null });
+        set({ loading: true, isLoading: true, error: null });
         try {
           const response = await fetch("/api/system-info");
           const data = await response.json();
@@ -158,11 +161,48 @@ const useSystemStore = create<SystemState>()(
               },
             },
             loading: false,
+            isLoading: false,
           }));
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
-          set({ error: errorMessage, loading: false });
+          set({ error: errorMessage, loading: false, isLoading: false });
+        }
+      },
+
+      // 添加 refreshSystemInfo 方法
+      refreshSystemInfo: async () => {
+        set({ loading: true, isLoading: true, error: null });
+        try {
+          const response = await fetch("/api/system-info");
+          const data = await response.json();
+
+          set((state: SystemState) => ({
+            systemInfo: data,
+            historicalData: {
+              cpu: [...state.historicalData.cpu.slice(-19), data.cpu.usage],
+              memory: [
+                ...state.historicalData.memory.slice(-19),
+                Math.round((data.memory.used / data.memory.total) * 100),
+              ],
+              network: {
+                download: [
+                  ...state.historicalData.network.download.slice(-19),
+                  data.network.bytesReceived,
+                ],
+                upload: [
+                  ...state.historicalData.network.upload.slice(-19),
+                  data.network.bytesSent,
+                ],
+              },
+            },
+            loading: false,
+            isLoading: false,
+          }));
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          set({ error: errorMessage, loading: false, isLoading: false });
         }
       },
 
