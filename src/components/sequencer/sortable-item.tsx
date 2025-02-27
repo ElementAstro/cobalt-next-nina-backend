@@ -1,6 +1,6 @@
 "use client";
 
-import { PropsWithChildren } from "react";
+import { PropsWithChildren, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -17,15 +17,17 @@ interface SortableItemProps {
   disabled?: boolean;
   showHandle?: boolean;
   dragOverlay?: boolean;
+  className?: string;
 }
 
-export function SortableItem({
+export const SortableItem = memo(({
   value,
   disabled = false,
   showHandle = true,
   dragOverlay = false,
+  className = "",
   children,
-}: PropsWithChildren<SortableItemProps>) {
+}: PropsWithChildren<SortableItemProps>) => {
   const {
     attributes,
     listeners,
@@ -34,6 +36,7 @@ export function SortableItem({
     transition,
     isDragging,
     isSorting,
+    over,
   } = useSortable({
     id: value,
     disabled,
@@ -44,7 +47,7 @@ export function SortableItem({
     transition: isSorting ? transition : undefined,
   };
 
-  // Drag handle element
+  // 拖拽手柄组件
   const DragHandle = showHandle ? (
     <TooltipProvider>
       <Tooltip>
@@ -59,6 +62,9 @@ export function SortableItem({
             `}
             {...attributes}
             {...listeners}
+            role="button"
+            aria-label="拖拽排序"
+            tabIndex={disabled ? -1 : 0}
           >
             <GripVertical className="w-4 h-4" />
           </div>
@@ -91,49 +97,70 @@ export function SortableItem({
         className={`
           relative flex items-stretch
           touch-none select-none
+          outline-none
           ${isDragging ? "z-50" : ""}
           ${dragOverlay ? "cursor-grabbing shadow-2xl" : ""}
+          ${over ? "ring-2 ring-teal-500/30" : ""}
+          ${className}
         `}
+        role="listitem"
+        aria-grabbed={isDragging}
+        aria-dropeffect="move"
       >
-        {/* Drag overlay effect */}
-        {isDragging && (
-          <motion.div
-            className="absolute inset-0 bg-gradient-to-r from-teal-500/10 to-transparent pointer-events-none"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          />
-        )}
+        {/* 拖拽时的视觉效果 */}
+        <AnimatePresence>
+          {isDragging && (
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-teal-500/10 to-transparent pointer-events-none"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            />
+          )}
+        </AnimatePresence>
 
-        {/* Left drag handle */}
+        {/* 左侧拖拽手柄 */}
         {showHandle && DragHandle}
 
-        {/* Main content */}
-        <div className="flex-1">
+        {/* 主要内容区域 */}
+        <div className="flex-1 outline-none">
           {children}
         </div>
 
-        {/* Right drag handle */}
+        {/* 右侧拖拽手柄 */}
         {showHandle && (
           <div className="absolute right-0 top-0 bottom-0 flex items-center justify-center">
             {DragHandle}
           </div>
         )}
 
-        {/* Active/hover states */}
+        {/* 拖拽状态效果 */}
+        <AnimatePresence>
+          {isDragging && (
+            <motion.div
+              className="absolute inset-0 bg-teal-500/5 pointer-events-none rounded-lg"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* 键盘焦点指示器 */}
         <motion.div
-          className="absolute inset-0 pointer-events-none"
+          className={`
+            absolute inset-0 rounded-lg ring-2 ring-teal-500/50 ring-offset-2 ring-offset-gray-900
+            pointer-events-none opacity-0 
+            focus-within:opacity-100
+          `}
           initial={false}
-          animate={{
-            opacity: isDragging ? 1 : 0,
-            backgroundColor: isDragging
-              ? "rgba(0, 0, 0, 0.05)"
-              : "rgba(0, 0, 0, 0)",
-          }}
           transition={{ duration: 0.2 }}
         />
       </motion.div>
     </AnimatePresence>
   );
-}
+});
+
+SortableItem.displayName = "SortableItem";

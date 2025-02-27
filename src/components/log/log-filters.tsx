@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { useLogStore } from "@/stores/logStore";
 import {
   X,
-  Calendar as CalendarIcon,
+  Calendar,
   ChevronDown,
   ChevronUp,
   Filter,
@@ -28,28 +28,40 @@ import {
   AlertCircle,
   AlertTriangle,
   Info,
+  Hash,
+  Clock,
+  Eye,
+  RefreshCw,
 } from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { DateRange } from "react-day-picker";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-const animationVariants = {
-  hidden: { opacity: 0, y: -10 },
-  visible: { opacity: 1, y: 0 },
+interface DateRangeWithoutUndefined {
+  from: Date;
+  to: Date;
+}
+
+const animationConfig = {
+  initial: { opacity: 0, y: -10 },
+  animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: 10 },
+  transition: { duration: 0.2 },
 };
 
 const LogFilters: React.FC = () => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  
   const {
+    logs,
     filter,
     setFilter,
     search,
@@ -62,27 +74,57 @@ const LogFilters: React.FC = () => {
     setIsRealTimeEnabled,
     logLevel,
     setLogLevel,
+    setDateRange: setStoreDateRange,
   } = useLogStore();
 
-  const handleClearFilter = () => {
+  // 获取唯一标签列表及其使用频率
+  const tagSuggestions = useMemo(() => {
+    const tagCounts = new Map<string, number>();
+    logs.forEach(log => {
+      log.tags?.forEach(tag => {
+        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      });
+    });
+    return Array.from(tagCounts.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [logs]);
+
+  const handleClearFilter = useCallback(() => {
     setFilter("");
     setSearch("");
     setDateRange(undefined);
+    setStoreDateRange(undefined);
     setLogCount(100);
     setLogLevel("all");
     setIsPaginationEnabled(false);
     setIsRealTimeEnabled(true);
-  };
+  }, [setFilter, setSearch, setStoreDateRange, setLogCount, setLogLevel, setIsPaginationEnabled, setIsRealTimeEnabled]);
 
-  const filterCount = [
-    filter ? 1 : 0,
-    search ? 1 : 0,
-    dateRange ? 1 : 0,
-    logLevel !== "all" ? 1 : 0,
-    logCount !== 100 ? 1 : 0,
-  ].reduce((a, b) => a + b, 0);
+  const filterCount = useMemo(() => {
+    return [
+      filter,
+      search,
+      dateRange,
+      logLevel !== "all",
+      logCount !== 100,
+    ].filter(Boolean).length;
+  }, [filter, search, dateRange, logLevel, logCount]);
 
-  const getLevelIcon = (level: string) => {
+  const handleDateRangeChange = useCallback((range: DateRange | undefined) => {
+    setDateRange(range);
+    if (range?.from && range?.to) {
+      const validRange: DateRangeWithoutUndefined = {
+        from: range.from,
+        to: range.to
+      };
+      setStoreDateRange(validRange);
+    } else {
+      setStoreDateRange(undefined);
+    }
+  }, [setStoreDateRange]);
+
+  const getLevelIcon = useCallback((level: string) => {
     switch (level) {
       case "error":
         return <AlertCircle className="h-4 w-4" />;
@@ -93,17 +135,14 @@ const LogFilters: React.FC = () => {
       default:
         return <Filter className="h-4 w-4" />;
     }
-  };
+  }, []);
 
   return (
     <Card className="border-none shadow-none bg-transparent">
       <CardContent className="p-0 space-y-4">
         <motion.div
           className="flex items-center justify-between"
-          initial="hidden"
-          animate="visible"
-          exit="exit"
-          variants={animationVariants}
+          {...animationConfig}
         >
           <div className="flex items-center gap-2">
             <Filter className="h-5 w-5 text-muted-foreground" />
@@ -121,7 +160,10 @@ const LogFilters: React.FC = () => {
             size="sm"
             onClick={handleClearFilter}
             disabled={filterCount === 0}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className={cn(
+              "text-muted-foreground hover:text-foreground transition-colors",
+              "hover:bg-destructive/10 hover:text-destructive"
+            )}
           >
             重置筛选
             <X className="h-4 w-4 ml-2" />
@@ -154,17 +196,32 @@ const LogFilters: React.FC = () => {
               onChange={(e) => setFilter(e.target.value)}
               className="pl-9 bg-background/50"
               onFocus={() => setShowTagSuggestions(true)}
-              onBlur={() => setShowTagSuggestions(false)}
+              onBlur={() => setTimeout(() => setShowTagSuggestions(false), 200)}
             />
             <AnimatePresence>
-              {showTagSuggestions && filter && (
+              {showTagSuggestions && tagSuggestions.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
-                  className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-md shadow-lg z-10"
+                  className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-md shadow-lg z-10 max-h-48 overflow-auto"
                 >
-                  {/* Tag suggestions would go here */}
+                  {tagSuggestions.map(({ tag, count }) => (
+                    <motion.button
+                      key={tag}
+                      className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50"
+                      onClick={() => setFilter(tag)}
+                      whileHover={{ backgroundColor: "rgba(0,0,0,0.05)" }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Hash className="h-3 w-3 text-muted-foreground" />
+                        {tag}
+                      </span>
+                      <Badge variant="secondary" className="text-xs">
+                        {count}
+                      </Badge>
+                    </motion.button>
+                  ))}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -212,7 +269,7 @@ const LogFilters: React.FC = () => {
                   !dateRange && "text-muted-foreground"
                 )}
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
+                <Calendar className="mr-2 h-4 w-4" />
                 {dateRange?.from ? (
                   dateRange.to ? (
                     <>
@@ -228,10 +285,10 @@ const LogFilters: React.FC = () => {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
+              <CalendarComponent
                 mode="range"
                 selected={dateRange}
-                onSelect={setDateRange}
+                onSelect={handleDateRangeChange}
                 numberOfMonths={2}
                 initialFocus
               />
@@ -267,7 +324,10 @@ const LogFilters: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">日志数量限制</Label>
+                      <Label className="text-sm font-medium flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        日志数量限制
+                      </Label>
                       <div className="pt-2">
                         <Slider
                           value={[logCount]}
@@ -286,7 +346,10 @@ const LogFilters: React.FC = () => {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
-                        <Label>分页显示</Label>
+                        <Label className="flex items-center gap-2">
+                          <Eye className="h-4 w-4" />
+                          分页显示
+                        </Label>
                         <div className="text-xs text-muted-foreground">
                           启用分页可提升大量日志的性能
                         </div>
@@ -298,7 +361,10 @@ const LogFilters: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
-                        <Label>实时更新</Label>
+                        <Label className="flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4" />
+                          实时更新
+                        </Label>
                         <div className="text-xs text-muted-foreground">
                           自动获取最新日志
                         </div>
@@ -324,13 +390,13 @@ const LogFilters: React.FC = () => {
               className="flex flex-wrap gap-2"
             >
               {filter && (
-                <Badge variant="secondary" className="gap-1">
+                <Badge variant="secondary" className="gap-1 group">
                   <Tag className="h-3 w-3" />
                   标签: {filter}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-4 w-4 p-0 hover:bg-transparent"
+                    className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => setFilter("")}
                   >
                     <X className="h-3 w-3" />
@@ -338,13 +404,13 @@ const LogFilters: React.FC = () => {
                 </Badge>
               )}
               {search && (
-                <Badge variant="secondary" className="gap-1">
+                <Badge variant="secondary" className="gap-1 group">
                   <Search className="h-3 w-3" />
                   搜索: {search}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-4 w-4 p-0 hover:bg-transparent"
+                    className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => setSearch("")}
                   >
                     <X className="h-3 w-3" />
@@ -352,13 +418,13 @@ const LogFilters: React.FC = () => {
                 </Badge>
               )}
               {logLevel !== "all" && (
-                <Badge variant="secondary" className="gap-1">
+                <Badge variant="secondary" className="gap-1 group">
                   {getLevelIcon(logLevel)}
                   级别: {logLevel}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-4 w-4 p-0 hover:bg-transparent"
+                    className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => setLogLevel("all")}
                   >
                     <X className="h-3 w-3" />

@@ -42,6 +42,9 @@ const LogItem = ({ index, style }: RowProps) => {
     useLogStore();
   const [isCopied, setIsCopied] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const log = filteredLogs[index] as LogEntry;
 
   const handleCopy = async (text: string) => {
     try {
@@ -55,7 +58,21 @@ const LogItem = ({ index, style }: RowProps) => {
     }
   };
 
-  const log = filteredLogs[index] as LogEntry;
+  const handleSelect = (checked: boolean) => {
+    setSelectedLogs(
+      checked
+        ? [...selectedLogs, log.id]
+        : selectedLogs.filter((id) => id !== log.id)
+    );
+  };
+
+  const handleAddNote = () => {
+    setSelectedLogForNote(log);
+  };
+
+  const handleExpand = () => {
+    setIsExpanded(!isExpanded);
+  };
 
   const getLevelIcon = (level: string) => {
     switch (level.toLowerCase()) {
@@ -103,18 +120,22 @@ const LogItem = ({ index, style }: RowProps) => {
           : "transparent",
       }}
       transition={{ duration: 0.2 }}
+      role="listitem"
+      aria-selected={selectedLogs.includes(log.id)}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          handleSelect(!selectedLogs.includes(log.id));
+          e.preventDefault();
+        }
+      }}
     >
       <div className="flex items-start gap-3">
         <div className="pt-1">
           <Checkbox
             checked={selectedLogs.includes(log.id)}
-            onCheckedChange={(checked) => {
-              setSelectedLogs(
-                checked
-                  ? [...selectedLogs, log.id]
-                  : selectedLogs.filter((id) => id !== log.id)
-              );
-            }}
+            onCheckedChange={handleSelect}
+            aria-label={`选择日志 ${index + 1}`}
           />
         </div>
 
@@ -155,14 +176,40 @@ const LogItem = ({ index, style }: RowProps) => {
             ))}
           </div>
 
-          <motion.pre
-            className="text-sm font-mono whitespace-pre-wrap break-all text-foreground/90"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
+          <motion.div
+            className="relative"
+            animate={{ height: isExpanded ? "auto" : "2.5rem" }}
           >
-            {log.message}
-          </motion.pre>
+            <motion.pre
+              className={cn(
+                "text-sm font-mono whitespace-pre-wrap break-all text-foreground/90",
+                !isExpanded && "line-clamp-2"
+              )}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+            >
+              {log.message}
+            </motion.pre>
+            {log.message.split("\n").length > 2 && !isExpanded && (
+              <motion.div
+                className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-background to-transparent"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              />
+            )}
+            {log.message.split("\n").length > 2 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-1 h-6 text-xs"
+                onClick={handleExpand}
+              >
+                {isExpanded ? "收起" : "展开"}
+              </Button>
+            )}
+          </motion.div>
 
           {log.note && (
             <motion.div
@@ -187,7 +234,10 @@ const LogItem = ({ index, style }: RowProps) => {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className={cn(
+                      "h-8 w-8 p-0 transition-all duration-200",
+                      isHovered ? "opacity-100" : "opacity-0"
+                    )}
                   >
                     <MoreVertical className="h-4 w-4" />
                   </Button>
@@ -197,7 +247,7 @@ const LogItem = ({ index, style }: RowProps) => {
             </Tooltip>
 
             <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={() => setSelectedLogForNote(log)}>
+              <DropdownMenuItem onClick={handleAddNote}>
                 <MessageSquare className="h-4 w-4 mr-2" />
                 添加备注
               </DropdownMenuItem>
@@ -205,7 +255,7 @@ const LogItem = ({ index, style }: RowProps) => {
                 onClick={() => handleCopy(log.message)}
                 className="relative"
               >
-                <AnimatePresence>
+                <AnimatePresence mode="wait">
                   {isCopied ? (
                     <motion.div
                       initial={{ scale: 0.8 }}

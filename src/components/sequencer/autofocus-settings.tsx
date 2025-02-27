@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, memo } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import {
   ArrowRight,
   RotateCcw,
   MoreVertical,
+  Save,
 } from "lucide-react";
 import {
   Tooltip,
@@ -45,26 +46,40 @@ interface SettingRowProps {
   description?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
+  error?: string;
 }
 
-const SettingRow = ({ label, description, icon, children }: SettingRowProps) => (
+const SettingRow = memo(({ label, description, icon, children, error }: SettingRowProps) => (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
     className="flex items-center justify-between gap-4 p-4 rounded-lg bg-gray-800/30"
+    role="group"
+    aria-labelledby={`setting-${label}`}
   >
     <div className="flex items-center gap-3">
-      {icon && <div className="text-gray-400">{icon}</div>}
+      {icon && (
+        <div className="text-gray-400 transition-colors group-hover:text-gray-300">
+          {icon}
+        </div>
+      )}
       <div>
-        <Label className="text-sm font-medium">{label}</Label>
+        <Label id={`setting-${label}`} className="text-sm font-medium">
+          {label}
+        </Label>
         {description && (
           <p className="text-xs text-gray-400">{description}</p>
+        )}
+        {error && (
+          <p className="text-xs text-red-400 mt-1">{error}</p>
         )}
       </div>
     </div>
     <div>{children}</div>
   </motion.div>
-);
+));
+
+SettingRow.displayName = "SettingRow";
 
 export function AutofocusSettings() {
   const { autofocusConfig, setAutofocusConfig } = useSequencerStore();
@@ -97,8 +112,16 @@ export function AutofocusSettings() {
     });
   }, [setAutofocusConfig]);
 
+  const saveToPreset = useCallback(() => {
+    // TODO: 保存到预设
+  }, []);
+
   return (
-    <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
+    <Card 
+      className="bg-gray-900/50 backdrop-blur-sm border-gray-800"
+      role="region"
+      aria-label="自动对焦设置"
+    >
       <CardHeader className="space-y-1">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -113,9 +136,10 @@ export function AutofocusSettings() {
                     variant="ghost"
                     size="sm"
                     onClick={resetToDefaults}
-                    className="h-8 w-8 p-0"
+                    className="h-8 w-8 p-0 hover:bg-gray-800/50"
                   >
                     <RotateCcw className="h-4 w-4" />
+                    <span className="sr-only">重置为默认设置</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -126,15 +150,28 @@ export function AutofocusSettings() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 w-8 p-0 hover:bg-gray-800/50"
+                >
                   <MoreVertical className="h-4 w-4" />
+                  <span className="sr-only">更多选项</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuLabel>更多选项</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>导入配置</DropdownMenuItem>
-                <DropdownMenuItem>导出配置</DropdownMenuItem>
+                <DropdownMenuItem onClick={saveToPreset}>
+                  <Save className="w-4 h-4 mr-2" />
+                  保存为预设
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  导入配置
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  导出配置
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -153,6 +190,7 @@ export function AutofocusSettings() {
               onCheckedChange={(checked) =>
                 handleConfigChange("enabled", checked)
               }
+              aria-label="启用自动对焦"
             />
           </SettingRow>
 
@@ -170,6 +208,7 @@ export function AutofocusSettings() {
                 onValueChange={([value]) =>
                   handleConfigChange("interval", value)
                 }
+                aria-label="对焦间隔"
               />
             </div>
           </SettingRow>
@@ -200,60 +239,6 @@ export function AutofocusSettings() {
           </SettingRow>
 
           <SettingRow
-            label="最小星数"
-            description="用于对焦的最小参考星数量"
-            icon={<Sparkles className="w-4 h-4" />}
-          >
-            <div className="w-44">
-              <Slider
-                min={3}
-                max={30}
-                step={1}
-                value={[autofocusConfig.minStars]}
-                onValueChange={([value]) =>
-                  handleConfigChange("minStars", value)
-                }
-              />
-            </div>
-          </SettingRow>
-
-          <SettingRow
-            label="目标 HFD"
-            description="期望达到的半高全宽值"
-            icon={<Focus className="w-4 h-4" />}
-          >
-            <div className="w-44">
-              <Slider
-                min={1}
-                max={5}
-                step={0.1}
-                value={[autofocusConfig.targetHFD]}
-                onValueChange={([value]) =>
-                  handleConfigChange("targetHFD", value)
-                }
-              />
-            </div>
-          </SettingRow>
-
-          <SettingRow
-            label="最大 HFD"
-            description="触发自动对焦的 HFD 阈值"
-            icon={<Focus className="w-4 h-4" />}
-          >
-            <div className="w-44">
-              <Slider
-                min={2}
-                max={8}
-                step={0.1}
-                value={[autofocusConfig.maxHFD]}
-                onValueChange={([value]) =>
-                  handleConfigChange("maxHFD", value)
-                }
-              />
-            </div>
-          </SettingRow>
-
-          <SettingRow
             label="切换滤镜时对焦"
             description="在更换滤镜后自动进行对焦"
             icon={<Filter className="w-4 h-4" />}
@@ -263,6 +248,7 @@ export function AutofocusSettings() {
               onCheckedChange={(checked) =>
                 handleConfigChange("autofocusOnFilterChange", checked)
               }
+              aria-label="切换滤镜时对焦"
             />
           </SettingRow>
 
@@ -279,12 +265,18 @@ export function AutofocusSettings() {
                   checked
                 )
               }
+              aria-label="温度变化时对焦"
             />
           </SettingRow>
 
-          {/* Advanced settings */}
-          <motion.div className="space-y-4 pt-4 border-t border-gray-800">
+          {/* 高级设置 */}
+          <motion.div 
+            className="space-y-4 pt-4 border-t border-gray-800"
+            role="region"
+            aria-label="高级设置"
+          >
             <Label className="text-sm text-gray-400">高级设置</Label>
+            
             <SettingRow
               label="步进大小"
               description="每次对焦移动的步数"
@@ -298,6 +290,7 @@ export function AutofocusSettings() {
                   onValueChange={([value]) =>
                     handleConfigChange("stepSize", value)
                   }
+                  aria-label="步进大小"
                 />
               </div>
             </SettingRow>
@@ -315,6 +308,7 @@ export function AutofocusSettings() {
                   onValueChange={([value]) =>
                     handleConfigChange("backlash", value)
                   }
+                  aria-label="反向间隙"
                 />
               </div>
             </SettingRow>
@@ -332,6 +326,7 @@ export function AutofocusSettings() {
                   onValueChange={([value]) =>
                     handleConfigChange("samples", value)
                   }
+                  aria-label="采样数"
                 />
               </div>
             </SettingRow>
@@ -349,6 +344,7 @@ export function AutofocusSettings() {
                   onValueChange={([value]) =>
                     handleConfigChange("tolerance", value)
                   }
+                  aria-label="容差"
                 />
               </div>
             </SettingRow>
@@ -366,6 +362,7 @@ export function AutofocusSettings() {
                   onValueChange={([value]) =>
                     handleConfigChange("maxIterations", value)
                   }
+                  aria-label="最大迭代次数"
                 />
               </div>
             </SettingRow>

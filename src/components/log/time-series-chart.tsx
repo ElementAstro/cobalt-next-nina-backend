@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -10,13 +10,14 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
   TooltipProps,
   Legend,
   Brush,
   Label,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip as RechartsTooltip,
+} from "recharts";
 import {
   Select,
   SelectContent,
@@ -24,11 +25,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { LogEntry } from "@/types/log";
-import { toast } from "sonner";
+import { Label as UILabel } from "@/components/ui/label";
 import {
   Download,
   Loader2,
@@ -36,8 +37,20 @@ import {
   ZoomOut,
   RefreshCw,
   Calendar,
+  Eye,
+  Grid,
+  Clock,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LogEntry } from "@/types/log";
+import { toast } from "sonner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface TimeSeriesChartProps {
   logs: LogEntry[];
@@ -46,7 +59,7 @@ interface TimeSeriesChartProps {
 
 type TimeRange = "1h" | "24h" | "7d" | "30d";
 
-interface ChartData {
+interface TimeSeriesData {
   timestamp: string;
   error: number;
   warn: number;
@@ -54,16 +67,11 @@ interface ChartData {
   total: number;
 }
 
-interface TooltipEntry {
+interface TooltipContent {
   name: string;
   value: number;
   color: string;
-  dataKey: keyof ChartData;
-}
-
-interface CustomTooltipProps extends Omit<TooltipProps<number, string>, 'payload'> {
-  payload?: TooltipEntry[];
-  label?: string;
+  dataKey: keyof TimeSeriesData;
 }
 
 const TIME_RANGES: Record<TimeRange, { label: string; ms: number }> = {
@@ -90,8 +98,10 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
   const [showBrush, setShowBrush] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
   const [showTotal, setShowTotal] = useState(true);
+  const [smoothing, setSmoothing] = useState(true);
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
 
+  // 处理时间序列数据
   const processData = useMemo(() => {
     const now = Date.now();
     const rangeMs = TIME_RANGES[timeRange].ms;
@@ -101,25 +111,35 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
       (log) => new Date(log.timestamp).getTime() > startTime
     );
 
-    const groupedData = filteredLogs.reduce((acc: Record<string, ChartData>, log) => {
-      const timestamp = new Date(log.timestamp).toLocaleString();
-      if (!acc[timestamp]) {
-        acc[timestamp] = {
-          timestamp,
+    // 按时间间隔分组
+    const interval = timeRange === "1h" ? 5 * 60 * 1000 : // 5分钟
+                    timeRange === "24h" ? 30 * 60 * 1000 : // 30分钟
+                    timeRange === "7d" ? 3 * 60 * 60 * 1000 : // 3小时
+                    12 * 60 * 60 * 1000; // 12小时 (30d)
+
+    const groups = new Map<number, TimeSeriesData>();
+
+    filteredLogs.forEach(log => {
+      const timestamp = new Date(log.timestamp).getTime();
+      const groupTime = Math.floor(timestamp / interval) * interval;
+      
+      if (!groups.has(groupTime)) {
+        groups.set(groupTime, {
+          timestamp: new Date(groupTime).toLocaleString(),
           error: 0,
           warn: 0,
           info: 0,
           total: 0,
-        };
+        });
       }
-      acc[timestamp][log.level]++;
-      acc[timestamp].total++;
-      return acc;
-    }, {});
 
-    return Object.values(groupedData).sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+      const group = groups.get(groupTime)!;
+      group[log.level as keyof Pick<TimeSeriesData, "error" | "warn" | "info">]++;
+      group.total++;
+    });
+
+    return Array.from(groups.values())
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [logs, timeRange]);
 
   const handleExport = async () => {
@@ -163,35 +183,62 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
     setZoomDomain(null);
   };
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     const length = processData.length;
     setZoomDomain([Math.floor(length / 4), Math.floor(length * 3 / 4)]);
-  };
+  }, [processData.length]);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     setZoomDomain([0, processData.length - 1]);
-  };
+  }, [processData.length]);
 
-  const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label }) => {
+  // 处理键盘快捷键
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === "+" || e.key === "=") {
+          e.preventDefault();
+          handleZoomIn();
+        } else if (e.key === "-") {
+          e.preventDefault();
+          handleZoomOut();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleZoomIn, handleZoomOut]);
+
+  const CustomTooltip = useCallback(({ active, payload }: TooltipProps<number, string>) => {
     if (active && payload && payload.length) {
       return (
         <Card className="border shadow-lg">
           <CardContent className="p-3 space-y-2">
-            <p className="text-sm font-medium">{label}</p>
+            <p className="text-sm font-medium">
+              {payload[0].payload.timestamp}
+            </p>
             <div className="space-y-1">
-              {payload.map((entry, index) => (
-                <div key={index} className="flex items-center gap-2">
+              {payload.map((entry) => (
+                <div key={entry.dataKey} className="flex items-center gap-2">
                   <Badge
                     variant="secondary"
                     style={{
-                      backgroundColor: entry.color + "20",
-                      color: entry.color,
+                      backgroundColor:
+                        COLORS[entry.dataKey as keyof typeof COLORS] + "20",
+                      color: COLORS[entry.dataKey as keyof typeof COLORS],
                     }}
                   >
                     {entry.value} 条
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    {entry.name}日志
+                    {entry.dataKey === "total"
+                      ? "总量"
+                      : entry.dataKey === "error"
+                      ? "错误"
+                      : entry.dataKey === "warn"
+                      ? "警告"
+                      : "信息"}
                   </span>
                 </div>
               ))}
@@ -201,7 +248,7 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
       );
     }
     return null;
-  };
+  }, []);
 
   return (
     <Card className="relative overflow-hidden">
@@ -226,71 +273,135 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 mr-4">
-            <Switch
-              checked={showGrid}
-              onCheckedChange={setShowGrid}
-              id="show-grid"
-            />
-            <label htmlFor="show-grid" className="text-sm cursor-pointer">
-              网格
-            </label>
-            <Switch
-              checked={showBrush}
-              onCheckedChange={setShowBrush}
-              id="show-brush"
-            />
-            <label htmlFor="show-brush" className="text-sm cursor-pointer">
-              缩放器
-            </label>
-            <Switch
-              checked={showTotal}
-              onCheckedChange={setShowTotal}
-              id="show-total"
-            />
-            <label htmlFor="show-total" className="text-sm cursor-pointer">
-              总量
-            </label>
-          </div>
+          <TooltipProvider>
+            <div className="flex items-center gap-2 mr-4">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={showGrid}
+                      onCheckedChange={setShowGrid}
+                      id="show-grid"
+                    />
+                    <UILabel htmlFor="show-grid" className="text-sm cursor-pointer">
+                      <Grid className="h-4 w-4" />
+                    </UILabel>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>显示网格</TooltipContent>
+              </Tooltip>
 
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleZoomIn}
-            className="h-8 w-8"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleZoomOut}
-            className="h-8 w-8"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleRefresh}
-            disabled={isLoading}
-            className="h-8 w-8"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleExport}
-            disabled={isExporting}
-            className={cn("h-8 w-8", isExporting && "animate-pulse")}
-          >
-            {isExporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-          </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={showBrush}
+                      onCheckedChange={setShowBrush}
+                      id="show-brush"
+                    />
+                    <UILabel htmlFor="show-brush" className="text-sm cursor-pointer">
+                      <Clock className="h-4 w-4" />
+                    </UILabel>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>显示时间轴</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={showTotal}
+                      onCheckedChange={setShowTotal}
+                      id="show-total"
+                    />
+                    <UILabel htmlFor="show-total" className="text-sm cursor-pointer">
+                      <TrendingUp className="h-4 w-4" />
+                    </UILabel>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>显示总量</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={smoothing}
+                      onCheckedChange={setSmoothing}
+                      id="show-smoothing"
+                    />
+                    <UILabel htmlFor="show-smoothing" className="text-sm cursor-pointer">
+                      <Eye className="h-4 w-4" />
+                    </UILabel>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>平滑曲线</TooltipContent>
+              </Tooltip>
+            </div>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleZoomIn}
+                  className="h-8 w-8"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>放大</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleZoomOut}
+                  className="h-8 w-8"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>缩小</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={isLoading}
+                  className="h-8 w-8"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>刷新</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  className={cn("h-8 w-8", isExporting && "animate-pulse")}
+                >
+                  {isExporting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>导出图表</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </CardHeader>
 
@@ -334,12 +445,12 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                   opacity={0.5}
                 />
               </YAxis>
-              <Tooltip content={<CustomTooltip />} />
+              <RechartsTooltip content={CustomTooltip} />
               <Legend />
               
               {showTotal && (
                 <Area
-                  type="monotone"
+                  type={smoothing ? "monotone" : "linear"}
                   dataKey="total"
                   fill={COLORS.total + "20"}
                   stroke={COLORS.total}
@@ -358,7 +469,7 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
               />
 
               <Line
-                type="monotone"
+                type={smoothing ? "monotone" : "linear"}
                 dataKey="warn"
                 stroke={COLORS.warn}
                 strokeWidth={2}
@@ -368,7 +479,7 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
               />
 
               <Line
-                type="monotone"
+                type={smoothing ? "monotone" : "linear"}
                 dataKey="info"
                 stroke={COLORS.info}
                 strokeWidth={2}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -32,7 +32,8 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { LogEntry } from "@/types/log";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   BarChart2,
   PieChart as PieChartIcon,
@@ -40,14 +41,23 @@ import {
   Radar as RadarIcon,
   Download,
   Loader2,
+  Settings2,
+  Eye,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { LogEntry } from "@/types/log";
 import { toast } from "sonner";
+import {
+  Tooltip as TooltipUI,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface LogChartProps {
   logs: LogEntry[];
-  chartType?: "bar" | "pie" | "radar" | "line";
+  chartType?: "bar" | "line" | "pie" | "radar";
   showTrends?: boolean;
   groupBy?: "level" | "hour" | "day" | "custom";
 }
@@ -69,7 +79,6 @@ const COLORS = {
   error: "rgb(239, 68, 68)",
   warn: "rgb(234, 179, 8)",
   info: "rgb(59, 130, 246)",
-  success: "rgb(34, 197, 94)",
   default: "rgb(99, 102, 241)",
 };
 
@@ -80,13 +89,17 @@ const CHART_TYPES = [
   { value: "radar", label: "雷达图", icon: RadarIcon },
 ] as const;
 
-const LogChart: React.FC<LogChartProps> = ({
+export const LogChart: React.FC<LogChartProps> = ({
   logs,
   chartType: initialChartType = "bar",
   groupBy = "level",
 }) => {
   const [chartType, setChartType] = useState(initialChartType);
   const [isExporting, setIsExporting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const processData = useMemo(() => {
@@ -103,7 +116,7 @@ const LogChart: React.FC<LogChartProps> = ({
     }));
   }, [logs, groupBy]);
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     try {
       setIsExporting(true);
       const svg = document.querySelector(".recharts-surface") as SVGElement;
@@ -129,15 +142,25 @@ const LogChart: React.FC<LogChartProps> = ({
     } finally {
       setIsExporting(false);
     }
-  };
+  }, []);
 
-  const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label }) => {
+  const handleRefresh = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast.success("图表已刷新");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const CustomTooltip: React.FC<CustomTooltipProps> = useCallback(({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
         <Card className="border shadow-lg">
           <CardContent className="p-3 space-y-1.5">
-            <p className="text-sm font-medium">{label || data.name}</p>
+            <p className="text-sm font-medium">{data.name}</p>
             <Badge 
               variant="secondary" 
               style={{ 
@@ -152,21 +175,28 @@ const LogChart: React.FC<LogChartProps> = ({
       );
     }
     return null;
-  };
+  }, []);
 
-  const renderBarChart = () => (
+  const renderBarChart = useCallback(() => (
     <BarChart data={processData} className="[&_.recharts-cartesian-grid-horizontal]:opacity-20">
-      <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+      {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-20" />}
       <XAxis 
         dataKey="name" 
         tick={{ fill: "currentColor", opacity: 0.5 }} 
+        hide={!showLabels}
       />
       <YAxis 
         tick={{ fill: "currentColor", opacity: 0.5 }}
         allowDecimals={false}
+        hide={!showLabels}
       />
       <Tooltip content={<CustomTooltip />} />
-      <Bar dataKey="value" className="cursor-pointer">
+      <Bar 
+        dataKey="value" 
+        className="cursor-pointer [&_.recharts-rectangle]:transition-colors"
+        role="img"
+        aria-label="柱状图"
+      >
         {processData.map((entry, index) => (
           <Cell
             key={`cell-${index}`}
@@ -178,18 +208,20 @@ const LogChart: React.FC<LogChartProps> = ({
         ))}
       </Bar>
     </BarChart>
-  );
+  ), [processData, showGrid, showLabels, activeIndex, CustomTooltip]);
 
-  const renderLineChart = () => (
+  const renderLineChart = useCallback(() => (
     <LineChart data={processData} className="[&_.recharts-cartesian-grid-horizontal]:opacity-20">
-      <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+      {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-20" />}
       <XAxis 
         dataKey="name" 
         tick={{ fill: "currentColor", opacity: 0.5 }} 
+        hide={!showLabels}
       />
       <YAxis 
         tick={{ fill: "currentColor", opacity: 0.5 }}
         allowDecimals={false}
+        hide={!showLabels}
       />
       <Tooltip content={<CustomTooltip />} />
       <Line
@@ -209,11 +241,13 @@ const LogChart: React.FC<LogChartProps> = ({
           fill: COLORS.default,
           stroke: "var(--background)",
         }}
+        role="img"
+        aria-label="折线图"
       />
     </LineChart>
-  );
+  ), [processData, showGrid, showLabels, CustomTooltip]);
 
-  const renderPieChart = () => (
+  const renderPieChart = useCallback(() => (
     <PieChart>
       <Pie
         data={processData}
@@ -224,6 +258,8 @@ const LogChart: React.FC<LogChartProps> = ({
         paddingAngle={2}
         dataKey="value"
         className="cursor-pointer"
+        role="img"
+        aria-label="饼图"
       >
         {processData.map((entry, index) => (
           <Cell
@@ -236,27 +272,36 @@ const LogChart: React.FC<LogChartProps> = ({
         ))}
       </Pie>
       <Tooltip content={<CustomTooltip />} />
-      <Legend />
+      {showLabels && <Legend />}
     </PieChart>
-  );
+  ), [processData, showLabels, activeIndex, CustomTooltip]);
 
-  const renderRadarChart = () => (
+  const renderRadarChart = useCallback(() => (
     <RadarChart cx="50%" cy="50%" outerRadius="80%" data={processData}>
-      <PolarGrid className="opacity-20" />
-      <PolarAngleAxis dataKey="name" tick={{ fill: "currentColor", opacity: 0.5 }} />
-      <PolarRadiusAxis tick={{ fill: "currentColor", opacity: 0.5 }} />
+      {showGrid && <PolarGrid className="opacity-20" />}
+      <PolarAngleAxis 
+        dataKey="name" 
+        tick={{ fill: "currentColor", opacity: 0.5 }} 
+        hide={!showLabels}
+      />
+      <PolarRadiusAxis 
+        tick={{ fill: "currentColor", opacity: 0.5 }} 
+        hide={!showLabels}
+      />
       <Radar
         name="日志分布"
         dataKey="value"
         stroke={COLORS.default}
         fill={COLORS.default}
         fillOpacity={0.2}
+        role="img"
+        aria-label="雷达图"
       />
       <Tooltip content={<CustomTooltip />} />
     </RadarChart>
-  );
+  ), [processData, showGrid, showLabels, CustomTooltip]);
 
-  const renderChart = () => {
+  const renderChart = useCallback(() => {
     const charts = {
       bar: renderBarChart,
       line: renderLineChart,
@@ -264,7 +309,7 @@ const LogChart: React.FC<LogChartProps> = ({
       radar: renderRadarChart,
     };
     return charts[chartType]?.() || null;
-  };
+  }, [chartType, renderBarChart, renderLineChart, renderPieChart, renderRadarChart]);
 
   return (
     <Card className="relative overflow-hidden">
@@ -286,25 +331,107 @@ const LogChart: React.FC<LogChartProps> = ({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleExport}
-            disabled={isExporting}
-            className={cn(
-              "transition-all",
-              isExporting && "animate-pulse"
-            )}
-          >
-            {isExporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-          </Button>
+
+          <TooltipProvider>
+            <TooltipUI>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={cn(
+                    "transition-colors",
+                    showSettings && "bg-muted"
+                  )}
+                >
+                  <Settings2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>图表设置</TooltipContent>
+            </TooltipUI>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <TooltipUI>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={isLoading}
+                  className={cn(
+                    "transition-all",
+                    isLoading && "animate-pulse"
+                  )}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>刷新图表</TooltipContent>
+            </TooltipUI>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <TooltipUI>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  className={cn(
+                    "transition-all",
+                    isExporting && "animate-pulse"
+                  )}
+                >
+                  {isExporting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>导出图表</TooltipContent>
+            </TooltipUI>
+          </TooltipProvider>
         </div>
       </CardHeader>
+
       <CardContent className="pt-6">
+        <AnimatePresence mode="wait">
+          {showSettings && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="mb-4 space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="show-grid">显示网格</Label>
+                  <Switch
+                    id="show-grid"
+                    checked={showGrid}
+                    onCheckedChange={setShowGrid}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="show-labels">显示标签</Label>
+                  <Switch
+                    id="show-labels"
+                    checked={showLabels}
+                    onCheckedChange={setShowLabels}
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="h-[350px] w-full">
           <ResponsiveContainer>
             <AnimatePresence mode="wait">
@@ -325,6 +452,3 @@ const LogChart: React.FC<LogChartProps> = ({
     </Card>
   );
 };
-
-export { LogChart };
-export type { LogChartProps };

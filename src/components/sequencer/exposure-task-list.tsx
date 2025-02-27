@@ -1,15 +1,8 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,6 +14,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import {
   DndContext,
   closestCenter,
@@ -52,6 +52,7 @@ import {
   Filter,
   Loader2,
   ArrowUpDown,
+  Download,
 } from "lucide-react";
 import {
   Dialog,
@@ -76,6 +77,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { SortableItem } from "./sortable-item";
+import { toast } from "@/hooks/use-toast";
 
 interface ExposureTask {
   id: string;
@@ -92,6 +94,97 @@ interface ExposureTask {
   offset: number;
 }
 
+const LoadingState = memo(() => (
+  <div className="flex items-center justify-center h-40" role="status">
+    <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
+    <span className="sr-only">加载中...</span>
+  </div>
+));
+
+LoadingState.displayName = "LoadingState";
+
+const EmptyState = memo(() => (
+  <div 
+    className="flex flex-col items-center justify-center h-40 text-gray-400"
+    role="status"
+    aria-label="暂无曝光任务"
+  >
+    <Camera className="w-8 h-8 mb-2 opacity-50" />
+    <p className="text-sm">暂无曝光任务</p>
+  </div>
+));
+
+EmptyState.displayName = "EmptyState";
+
+const TaskActions = memo(({ task, onStart, onPause, onDelete }: {
+  task: ExposureTask;
+  onStart: () => void;
+  onPause: () => void;
+  onDelete: () => void;
+}) => (
+  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => task.status === "running" ? onPause() : onStart()}
+            className="h-8 w-8 p-0"
+          >
+            {task.status === "running" ? (
+              <Pause className="w-4 h-4" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            <span className="sr-only">
+              {task.status === "running" ? "暂停任务" : "开始任务"}
+            </span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{task.status === "running" ? "暂停任务" : "开始任务"}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+        >
+          <MoreVertical className="w-4 h-4" />
+          <span className="sr-only">任务操作菜单</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel>任务操作</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem>
+          <Edit className="w-4 h-4 mr-2" />
+          编辑任务
+        </DropdownMenuItem>
+        <DropdownMenuItem>
+          <Copy className="w-4 h-4 mr-2" />
+          复制任务
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="text-red-500"
+          onClick={onDelete}
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          删除任务
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div>
+));
+
+TaskActions.displayName = "TaskActions";
+
 export function ExposureTaskList() {
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -104,12 +197,11 @@ export function ExposureTaskList() {
     deleteExposureTask: deleteTask,
   } = useSequencerStore();
 
-  // 初始加载
+  // 初始加载效果
   useEffect(() => {
     const loadTasks = async () => {
       setIsLoading(true);
       try {
-        // 这里可以添加实际的任务加载逻辑
         await new Promise(resolve => setTimeout(resolve, 1000));
       } finally {
         setIsLoading(false);
@@ -147,8 +239,20 @@ export function ExposureTaskList() {
   }, []);
 
   const handleBulkDelete = useCallback(() => {
-    selectedTasks.forEach(deleteTask);
-    setSelectedTasks([]);
+    if (selectedTasks.length === 0) return;
+    
+    const confirmDelete = window.confirm(
+      `确定要删除选中的 ${selectedTasks.length} 个任务吗？`
+    );
+    
+    if (confirmDelete) {
+      selectedTasks.forEach(deleteTask);
+      setSelectedTasks([]);
+      toast({
+        title: "批量删除成功",
+        description: `已删除 ${selectedTasks.length} 个任务`,
+      });
+    }
   }, [selectedTasks, deleteTask]);
 
   const getStatusColor = (status: ExposureTask["status"]) => {
@@ -176,6 +280,31 @@ export function ExposureTaskList() {
         return <Clock className="w-4 h-4" />;
     }
   };
+
+  const exportTaskList = useCallback(() => {
+    const data = tasks.map(task => ({
+      ...task,
+      progress: undefined // 移除进度信息
+    }));
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "exposure-tasks.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "导出成功",
+      description: "任务列表已导出为 JSON 文件",
+    });
+  }, [tasks]);
 
   return (
     <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
@@ -208,6 +337,7 @@ export function ExposureTaskList() {
                         className="h-8 text-red-400 hover:text-red-300 hover:bg-red-400/10"
                       >
                         <Trash2 className="w-4 h-4" />
+                        <span className="sr-only">删除选中任务</span>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -217,6 +347,7 @@ export function ExposureTaskList() {
                 </TooltipProvider>
               </motion.div>
             )}
+            
             <Dialog open={showSettings} onOpenChange={setShowSettings}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8">
@@ -234,8 +365,10 @@ export function ExposureTaskList() {
                 {/* 添加任务表单 */}
               </DialogContent>
             </Dialog>
+            
             <Button variant="ghost" size="sm" className="h-8">
               <Settings className="w-4 h-4" />
+              <span className="sr-only">任务设置</span>
             </Button>
           </div>
         </div>
@@ -244,14 +377,9 @@ export function ExposureTaskList() {
       <CardContent className="p-0">
         <div className="border-t border-gray-800">
           {isLoading ? (
-            <div className="flex items-center justify-center h-40">
-              <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
-            </div>
+            <LoadingState />
           ) : tasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-              <Camera className="w-8 h-8 mb-2 opacity-50" />
-              <p className="text-sm">暂无曝光任务</p>
-            </div>
+            <EmptyState />
           ) : (
             <div className="relative overflow-x-auto">
               <Table>
@@ -268,6 +396,7 @@ export function ExposureTaskList() {
                             checked ? tasks.map((t: ExposureTask) => t.id) : []
                           );
                         }}
+                        aria-label="选择所有任务"
                       />
                     </TableHead>
                     <TableHead className="font-medium">
@@ -311,6 +440,7 @@ export function ExposureTaskList() {
                                 <Checkbox
                                   checked={selectedTasks.includes(task.id)}
                                   onCheckedChange={() => toggleTaskSelection(task.id)}
+                                  aria-label={`选择任务: ${task.name}`}
                                 />
                               </TableCell>
                               <TableCell>
@@ -328,7 +458,7 @@ export function ExposureTaskList() {
                                   <span>{task.filter}</span>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-right tabular-nums">
                                 {task.exposure}s × {task.count}
                               </TableCell>
                               <TableCell className="w-32">
@@ -336,6 +466,7 @@ export function ExposureTaskList() {
                                   <Progress
                                     value={(task.progress[0] / task.progress[1]) * 100}
                                     className="w-20 h-2"
+                                    aria-label={`进度: ${task.progress[0]}/${task.progress[1]}`}
                                   />
                                   <span className="text-xs text-gray-400 tabular-nums">
                                     {task.progress[0]}/{task.progress[1]}
@@ -351,69 +482,12 @@ export function ExposureTaskList() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() =>
-                                            task.status === "running"
-                                              ? pauseTask(task.id)
-                                              : startTask(task.id)
-                                          }
-                                          className="h-8 w-8 p-0"
-                                        >
-                                          {task.status === "running" ? (
-                                            <Pause className="w-4 h-4" />
-                                          ) : (
-                                            <Play className="w-4 h-4" />
-                                          )}
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>
-                                          {task.status === "running"
-                                            ? "暂停任务"
-                                            : "开始任务"}
-                                        </p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-8 w-8 p-0"
-                                      >
-                                        <MoreVertical className="w-4 h-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuLabel>任务操作</DropdownMenuLabel>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem>
-                                        <Edit className="w-4 h-4 mr-2" />
-                                        编辑任务
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem>
-                                        <Copy className="w-4 h-4 mr-2" />
-                                        复制任务
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        className="text-red-500"
-                                        onClick={() => deleteTask(task.id)}
-                                      >
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        删除任务
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
+                                <TaskActions
+                                  task={task}
+                                  onStart={() => startTask(task.id)}
+                                  onPause={() => pauseTask(task.id)}
+                                  onDelete={() => deleteTask(task.id)}
+                                />
                               </TableCell>
                             </motion.tr>
                           </SortableItem>
@@ -441,7 +515,13 @@ export function ExposureTaskList() {
               {tasks.filter((t: ExposureTask) => t.status === "running").length}
             </div>
           </div>
-          <Button variant="outline" size="sm" className="h-8">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-8"
+            onClick={exportTaskList}
+          >
+            <Download className="w-4 h-4 mr-2" />
             导出任务列表
           </Button>
         </CardFooter>
