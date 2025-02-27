@@ -68,7 +68,8 @@ interface ChartData {
   color: string;
 }
 
-interface CustomTooltipProps extends Omit<TooltipProps<number, string>, 'payload'> {
+interface CustomTooltipProps
+  extends Omit<TooltipProps<number, string>, "payload"> {
   payload?: Array<{
     payload: ChartData;
     value: number;
@@ -104,7 +105,10 @@ export const LogChart: React.FC<LogChartProps> = ({
 
   const processData = useMemo(() => {
     const groupedData = logs.reduce((acc: { [key: string]: number }, log) => {
-      const key = groupBy === "level" ? log.level : new Date(log.timestamp).toLocaleString();
+      const key =
+        groupBy === "level"
+          ? log.level
+          : new Date(log.timestamp).toLocaleString();
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
@@ -147,159 +151,184 @@ export const LogChart: React.FC<LogChartProps> = ({
   const handleRefresh = useCallback(async () => {
     try {
       setIsLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       toast.success("图表已刷新");
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const CustomTooltip: React.FC<CustomTooltipProps> = useCallback(({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <Card className="border shadow-lg">
-          <CardContent className="p-3 space-y-1.5">
-            <p className="text-sm font-medium">{data.name}</p>
-            <Badge 
-              variant="secondary" 
-              style={{ 
-                backgroundColor: data.color + "20",
-                color: data.color 
-              }}
-            >
-              {payload[0].value} 条日志
-            </Badge>
-          </CardContent>
-        </Card>
-      );
-    }
-    return null;
-  }, []);
+  const CustomTooltip: React.FC<CustomTooltipProps> = useCallback(
+    ({ active, payload }) => {
+      if (active && payload && payload.length) {
+        const data = payload[0].payload;
+        return (
+          <Card className="border shadow-lg">
+            <CardContent className="p-3 space-y-1.5">
+              <p className="text-sm font-medium">{data.name}</p>
+              <Badge
+                variant="secondary"
+                style={{
+                  backgroundColor: data.color + "20",
+                  color: data.color,
+                }}
+              >
+                {payload[0].value} 条日志
+              </Badge>
+            </CardContent>
+          </Card>
+        );
+      }
+      return null;
+    },
+    []
+  );
 
-  const renderBarChart = useCallback(() => (
-    <BarChart data={processData} className="[&_.recharts-cartesian-grid-horizontal]:opacity-20">
-      {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-20" />}
-      <XAxis 
-        dataKey="name" 
-        tick={{ fill: "currentColor", opacity: 0.5 }} 
-        hide={!showLabels}
-      />
-      <YAxis 
-        tick={{ fill: "currentColor", opacity: 0.5 }}
-        allowDecimals={false}
-        hide={!showLabels}
-      />
-      <Tooltip content={<CustomTooltip />} />
-      <Bar 
-        dataKey="value" 
-        className="cursor-pointer [&_.recharts-rectangle]:transition-colors"
-        role="img"
-        aria-label="柱状图"
-      >
-        {processData.map((entry, index) => (
-          <Cell
-            key={`cell-${index}`}
-            fill={entry.color}
-            opacity={activeIndex === null || activeIndex === index ? 1 : 0.3}
-            onMouseEnter={() => setActiveIndex(index)}
-            onMouseLeave={() => setActiveIndex(null)}
-          />
-        ))}
-      </Bar>
-    </BarChart>
-  ), [processData, showGrid, showLabels, activeIndex, CustomTooltip]);
-
-  const renderLineChart = useCallback(() => (
-    <LineChart data={processData} className="[&_.recharts-cartesian-grid-horizontal]:opacity-20">
-      {showGrid && <CartesianGrid strokeDasharray="3 3" className="opacity-20" />}
-      <XAxis 
-        dataKey="name" 
-        tick={{ fill: "currentColor", opacity: 0.5 }} 
-        hide={!showLabels}
-      />
-      <YAxis 
-        tick={{ fill: "currentColor", opacity: 0.5 }}
-        allowDecimals={false}
-        hide={!showLabels}
-      />
-      <Tooltip content={<CustomTooltip />} />
-      <Line
-        type="monotone"
-        dataKey="value"
-        stroke={COLORS.default}
-        strokeWidth={2}
-        dot={{
-          r: 4,
-          strokeWidth: 2,
-          fill: "var(--background)",
-          stroke: COLORS.default,
-        }}
-        activeDot={{
-          r: 6,
-          strokeWidth: 2,
-          fill: COLORS.default,
-          stroke: "var(--background)",
-        }}
-        role="img"
-        aria-label="折线图"
-      />
-    </LineChart>
-  ), [processData, showGrid, showLabels, CustomTooltip]);
-
-  const renderPieChart = useCallback(() => (
-    <PieChart>
-      <Pie
+  const renderBarChart = useCallback(
+    () => (
+      <BarChart
         data={processData}
-        cx="50%"
-        cy="50%"
-        innerRadius={60}
-        outerRadius={80}
-        paddingAngle={2}
-        dataKey="value"
-        className="cursor-pointer"
-        role="img"
-        aria-label="饼图"
+        className="[&_.recharts-cartesian-grid-horizontal]:opacity-20"
       >
-        {processData.map((entry, index) => (
-          <Cell
-            key={`cell-${index}`}
-            fill={entry.color}
-            opacity={activeIndex === null || activeIndex === index ? 1 : 0.3}
-            onMouseEnter={() => setActiveIndex(index)}
-            onMouseLeave={() => setActiveIndex(null)}
-          />
-        ))}
-      </Pie>
-      <Tooltip content={<CustomTooltip />} />
-      {showLabels && <Legend />}
-    </PieChart>
-  ), [processData, showLabels, activeIndex, CustomTooltip]);
+        {showGrid && (
+          <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+        )}
+        <XAxis
+          dataKey="name"
+          tick={{ fill: "currentColor", opacity: 0.5 }}
+          hide={!showLabels}
+        />
+        <YAxis
+          tick={{ fill: "currentColor", opacity: 0.5 }}
+          allowDecimals={false}
+          hide={!showLabels}
+        />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar
+          dataKey="value"
+          className="cursor-pointer [&_.recharts-rectangle]:transition-colors"
+          role="img"
+          aria-label="柱状图"
+        >
+          {processData.map((entry, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={entry.color}
+              opacity={activeIndex === null || activeIndex === index ? 1 : 0.3}
+              onMouseEnter={() => setActiveIndex(index)}
+              onMouseLeave={() => setActiveIndex(null)}
+            />
+          ))}
+        </Bar>
+      </BarChart>
+    ),
+    [processData, showGrid, showLabels, activeIndex, CustomTooltip]
+  );
 
-  const renderRadarChart = useCallback(() => (
-    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={processData}>
-      {showGrid && <PolarGrid className="opacity-20" />}
-      <PolarAngleAxis 
-        dataKey="name" 
-        tick={{ fill: "currentColor", opacity: 0.5 }} 
-        hide={!showLabels}
-      />
-      <PolarRadiusAxis 
-        tick={{ fill: "currentColor", opacity: 0.5 }} 
-        hide={!showLabels}
-      />
-      <Radar
-        name="日志分布"
-        dataKey="value"
-        stroke={COLORS.default}
-        fill={COLORS.default}
-        fillOpacity={0.2}
-        role="img"
-        aria-label="雷达图"
-      />
-      <Tooltip content={<CustomTooltip />} />
-    </RadarChart>
-  ), [processData, showGrid, showLabels, CustomTooltip]);
+  const renderLineChart = useCallback(
+    () => (
+      <LineChart
+        data={processData}
+        className="[&_.recharts-cartesian-grid-horizontal]:opacity-20"
+      >
+        {showGrid && (
+          <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+        )}
+        <XAxis
+          dataKey="name"
+          tick={{ fill: "currentColor", opacity: 0.5 }}
+          hide={!showLabels}
+        />
+        <YAxis
+          tick={{ fill: "currentColor", opacity: 0.5 }}
+          allowDecimals={false}
+          hide={!showLabels}
+        />
+        <Tooltip content={<CustomTooltip />} />
+        <Line
+          type="monotone"
+          dataKey="value"
+          stroke={COLORS.default}
+          strokeWidth={2}
+          dot={{
+            r: 4,
+            strokeWidth: 2,
+            fill: "var(--background)",
+            stroke: COLORS.default,
+          }}
+          activeDot={{
+            r: 6,
+            strokeWidth: 2,
+            fill: COLORS.default,
+            stroke: "var(--background)",
+          }}
+          role="img"
+          aria-label="折线图"
+        />
+      </LineChart>
+    ),
+    [processData, showGrid, showLabels, CustomTooltip]
+  );
+
+  const renderPieChart = useCallback(
+    () => (
+      <PieChart>
+        <Pie
+          data={processData}
+          cx="50%"
+          cy="50%"
+          innerRadius={60}
+          outerRadius={80}
+          paddingAngle={2}
+          dataKey="value"
+          className="cursor-pointer"
+          role="img"
+          aria-label="饼图"
+        >
+          {processData.map((entry, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={entry.color}
+              opacity={activeIndex === null || activeIndex === index ? 1 : 0.3}
+              onMouseEnter={() => setActiveIndex(index)}
+              onMouseLeave={() => setActiveIndex(null)}
+            />
+          ))}
+        </Pie>
+        <Tooltip content={<CustomTooltip />} />
+        {showLabels && <Legend />}
+      </PieChart>
+    ),
+    [processData, showLabels, activeIndex, CustomTooltip]
+  );
+
+  const renderRadarChart = useCallback(
+    () => (
+      <RadarChart cx="50%" cy="50%" outerRadius="80%" data={processData}>
+        {showGrid && <PolarGrid className="opacity-20" />}
+        <PolarAngleAxis
+          dataKey="name"
+          tick={{ fill: "currentColor", opacity: 0.5 }}
+          hide={!showLabels}
+        />
+        <PolarRadiusAxis
+          tick={{ fill: "currentColor", opacity: 0.5 }}
+          hide={!showLabels}
+        />
+        <Radar
+          name="日志分布"
+          dataKey="value"
+          stroke={COLORS.default}
+          fill={COLORS.default}
+          fillOpacity={0.2}
+          role="img"
+          aria-label="雷达图"
+        />
+        <Tooltip content={<CustomTooltip />} />
+      </RadarChart>
+    ),
+    [processData, showGrid, showLabels, CustomTooltip]
+  );
 
   const renderChart = useCallback(() => {
     const charts = {
@@ -309,14 +338,23 @@ export const LogChart: React.FC<LogChartProps> = ({
       radar: renderRadarChart,
     };
     return charts[chartType]?.() || null;
-  }, [chartType, renderBarChart, renderLineChart, renderPieChart, renderRadarChart]);
+  }, [
+    chartType,
+    renderBarChart,
+    renderLineChart,
+    renderPieChart,
+    renderRadarChart,
+  ]);
 
   return (
     <Card className="relative overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-base font-medium">日志统计</CardTitle>
         <div className="flex items-center gap-2">
-          <Select value={chartType} onValueChange={(value: typeof chartType) => setChartType(value)}>
+          <Select
+            value={chartType}
+            onValueChange={(value: typeof chartType) => setChartType(value)}
+          >
             <SelectTrigger className="w-[100px]">
               <SelectValue />
             </SelectTrigger>
@@ -359,10 +397,7 @@ export const LogChart: React.FC<LogChartProps> = ({
                   size="icon"
                   onClick={handleRefresh}
                   disabled={isLoading}
-                  className={cn(
-                    "transition-all",
-                    isLoading && "animate-pulse"
-                  )}
+                  className={cn("transition-all", isLoading && "animate-pulse")}
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

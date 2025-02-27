@@ -29,7 +29,11 @@ const LogTabs: React.FC = () => {
     <div className="flex flex-col h-full overflow-hidden dark:bg-gray-900">
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={(value) =>
+          setActiveTab(
+            value as "logs" | "analysis" | "timeseries" | "comparison"
+          )
+        }
         className="flex-grow flex flex-col dark:text-gray-200"
       >
         <motion.div
@@ -57,7 +61,7 @@ const LogTabs: React.FC = () => {
         </motion.div>
 
         <AnimatePresence mode="wait">
-          <motion.div 
+          <motion.div
             className="flex-1 overflow-y-auto px-2"
             key={activeTab}
             initial={{ opacity: 0, y: 20 }}
@@ -92,10 +96,7 @@ const LogTabs: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <LogComparison 
-                logs={logs} 
-                timeRange={comparisonTimeRange} 
-              />
+              <LogComparison logs={logs} timeRange={comparisonTimeRange} />
             </TabsContent>
           </motion.div>
         </AnimatePresence>

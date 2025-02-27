@@ -46,31 +46,39 @@ const LogList: React.FC = () => {
     : filteredLogs;
 
   // 键盘导航支持
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    if (event.key === "Home") {
-      listRef.current?.scrollTo(0);
-    } else if (event.key === "End") {
-      listRef.current?.scrollToItem(paginatedLogs.length - 1);
-    }
-  }, [paginatedLogs.length]);
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key === "Home") {
+        listRef.current?.scrollTo(0);
+      } else if (event.key === "End") {
+        listRef.current?.scrollToItem(paginatedLogs.length - 1);
+      }
+    },
+    [paginatedLogs.length]
+  );
 
   useEffect(() => {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  const handleScroll = useCallback(({ scrollOffset }: { scrollOffset: number }) => {
-    setIsScrolling(true);
-    if (scrollTimeout.current) {
-      clearTimeout(scrollTimeout.current);
-    }
-    scrollTimeout.current = setTimeout(() => setIsScrolling(false), 300);
+  const handleScroll = useCallback(
+    ({ scrollOffset }: { scrollOffset: number }) => {
+      setIsScrolling(true);
+      if (scrollTimeout.current) {
+        clearTimeout(scrollTimeout.current);
+      }
+      scrollTimeout.current = setTimeout(() => setIsScrolling(false), 300);
 
-    // Show scroll to bottom button if not at bottom
-    const listHeight = Number(listRef.current?.props.height || 0);
-    const totalHeight = Number(paginatedLogs.length * ITEM_HEIGHT);
-    setShowScrollButton(scrollOffset < totalHeight - listHeight - SCROLL_THRESHOLD);
-  }, [paginatedLogs.length]);
+      // Show scroll to bottom button if not at bottom
+      const listHeight = Number(listRef.current?.props.height || 0);
+      const totalHeight = Number(paginatedLogs.length * ITEM_HEIGHT);
+      setShowScrollButton(
+        scrollOffset < totalHeight - listHeight - SCROLL_THRESHOLD
+      );
+    },
+    [paginatedLogs.length]
+  );
 
   const scrollToBottom = useCallback(() => {
     if (listRef.current) {
@@ -169,7 +177,7 @@ const LogList: React.FC = () => {
   );
 
   return (
-    <Card 
+    <Card
       className="flex flex-col h-full dark:bg-gray-900/80 backdrop-blur-sm"
       role="region"
       aria-label="日志列表"
@@ -186,7 +194,7 @@ const LogList: React.FC = () => {
         </div>
       </motion.div>
 
-      <ScrollArea 
+      <ScrollArea
         className="flex-1 relative"
         aria-busy={isLoading}
         aria-live="polite"
@@ -220,11 +228,11 @@ const LogList: React.FC = () => {
           )}
 
           <AnimatePresence mode="wait">
-            {error ? (
-              renderError()
-            ) : !isLoading && filteredLogs.length === 0 ? (
-              renderEmptyState()
-            ) : null}
+            {error
+              ? renderError()
+              : !isLoading && filteredLogs.length === 0
+              ? renderEmptyState()
+              : null}
           </AnimatePresence>
 
           {isRealTimeEnabled && showScrollButton && (

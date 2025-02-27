@@ -59,7 +59,7 @@ const LogFilters: React.FC = () => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
-  
+
   const {
     logs,
     filter,
@@ -80,8 +80,8 @@ const LogFilters: React.FC = () => {
   // 获取唯一标签列表及其使用频率
   const tagSuggestions = useMemo(() => {
     const tagCounts = new Map<string, number>();
-    logs.forEach(log => {
-      log.tags?.forEach(tag => {
+    logs.forEach((log) => {
+      log.tags?.forEach((tag) => {
         tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
       });
     });
@@ -99,7 +99,15 @@ const LogFilters: React.FC = () => {
     setLogLevel("all");
     setIsPaginationEnabled(false);
     setIsRealTimeEnabled(true);
-  }, [setFilter, setSearch, setStoreDateRange, setLogCount, setLogLevel, setIsPaginationEnabled, setIsRealTimeEnabled]);
+  }, [
+    setFilter,
+    setSearch,
+    setStoreDateRange,
+    setLogCount,
+    setLogLevel,
+    setIsPaginationEnabled,
+    setIsRealTimeEnabled,
+  ]);
 
   const filterCount = useMemo(() => {
     return [
@@ -111,18 +119,21 @@ const LogFilters: React.FC = () => {
     ].filter(Boolean).length;
   }, [filter, search, dateRange, logLevel, logCount]);
 
-  const handleDateRangeChange = useCallback((range: DateRange | undefined) => {
-    setDateRange(range);
-    if (range?.from && range?.to) {
-      const validRange: DateRangeWithoutUndefined = {
-        from: range.from,
-        to: range.to
-      };
-      setStoreDateRange(validRange);
-    } else {
-      setStoreDateRange(undefined);
-    }
-  }, [setStoreDateRange]);
+  const handleDateRangeChange = useCallback(
+    (range: DateRange | undefined) => {
+      setDateRange(range);
+      if (range?.from && range?.to) {
+        const validRange: DateRangeWithoutUndefined = {
+          from: range.from,
+          to: range.to,
+        };
+        setStoreDateRange(validRange);
+      } else {
+        setStoreDateRange(undefined);
+      }
+    },
+    [setStoreDateRange]
+  );
 
   const getLevelIcon = useCallback((level: string) => {
     switch (level) {
@@ -146,7 +157,7 @@ const LogFilters: React.FC = () => {
         >
           <div className="flex items-center gap-2">
             <Filter className="h-5 w-5 text-muted-foreground" />
-            <motion.span 
+            <motion.span
               className="text-sm font-medium"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -170,7 +181,7 @@ const LogFilters: React.FC = () => {
           </Button>
         </motion.div>
 
-        <motion.div 
+        <motion.div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -262,8 +273,8 @@ const LogFilters: React.FC = () => {
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className={cn(
                   "w-full justify-start text-left font-normal bg-background/50",
                   !dateRange && "text-muted-foreground"

@@ -152,7 +152,10 @@ const LogItem = ({ index, style }: RowProps) => {
 
             <Badge
               variant="outline"
-              className={cn("h-5 flex items-center gap-1", getLevelClass(log.level))}
+              className={cn(
+                "h-5 flex items-center gap-1",
+                getLevelClass(log.level)
+              )}
             >
               {getLevelIcon(log.level)}
               {log.level}
