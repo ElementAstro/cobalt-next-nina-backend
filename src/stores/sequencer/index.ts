@@ -1,5 +1,6 @@
 "use client";
 
+import { TargetSettings } from "@/types/sequencer";
 import { create } from "zustand";
 
 // 基础接口定义
@@ -111,6 +112,14 @@ export interface TimelinePoint {
   value: number | number[];
 }
 
+// 通知接口
+export interface Notification {
+  id: string;
+  message: string;
+  type: "info" | "success" | "warning" | "error";
+  timestamp: Date;
+}
+
 const DEFAULT_AUTOFOCUS_CONFIG: AutofocusConfig = {
   enabled: false,
   interval: 30,
@@ -137,6 +146,23 @@ const DEFAULT_FOCUS_QUALITY_METRICS: FocusQualityMetrics = {
     hfd: 0,
     score: 0,
   },
+};
+
+// 默认设置
+const DEFAULT_SETTINGS: TargetSettings = {
+  delayStart: "false",
+  sequenceMode: "one-after-another",
+  startTime: new Date().toISOString(),
+  endTime: new Date().toISOString(),
+  duration: "0",
+  retryCount: 3,
+  timeout: 60,
+  coolCamera: true,
+  unparkMount: true,
+  meridianFlip: true,
+  warmCamera: true,
+  parkMount: true,
+  createdAt: new Date(),
 };
 
 export interface SequencerStore {
@@ -171,7 +197,7 @@ export interface SequencerStore {
   stopSequence: () => void;
 
   // Error handling
-  errors: string[];
+  errors: Record<string, string>;
   clearErrors: () => void;
 
   // Autofocus
@@ -182,6 +208,27 @@ export interface SequencerStore {
   lastFocusTime: Date | null;
   executionStatus: ExecutionStatus;
   focusQualityMetrics: FocusQualityMetrics;
+
+  // 添加目标设置相关状态和方法
+  settings: TargetSettings;
+  setSetting: <K extends keyof TargetSettings>(
+    key: K,
+    value: TargetSettings[K]
+  ) => void;
+  saveSettings: () => Promise<void>;
+  resetSettings: () => void;
+
+  // 添加通知相关状态
+  notifications: Notification[];
+  addNotification: (
+    notification: Omit<Notification, "id" | "timestamp">
+  ) => void;
+  removeNotification: (id: string) => void;
+  clearNotifications: () => void;
+
+  // 添加进度相关状态
+  currentProgress: number;
+  updateProgress: (progress: number) => void;
 }
 
 export const useSequencerStore = create<SequencerStore>((set) => ({
@@ -220,7 +267,7 @@ export const useSequencerStore = create<SequencerStore>((set) => ({
         [taskId]: { status: "running" },
       },
     }));
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     set((state: SequencerStore) => ({
       taskStatuses: {
         ...state.taskStatuses,
@@ -247,9 +294,7 @@ export const useSequencerStore = create<SequencerStore>((set) => ({
   activeTargetId: null,
   updateTarget: (targetId: string, target: Target) => {
     set((state: SequencerStore) => ({
-      targets: state.targets.map((t) =>
-        t.id === targetId ? target : t
-      ),
+      targets: state.targets.map((t) => (t.id === targetId ? target : t)),
     }));
   },
   validateTarget: async (targetId: string) => {
@@ -305,13 +350,71 @@ export const useSequencerStore = create<SequencerStore>((set) => ({
   // Timeline
   timeline: [],
   isRunning: false,
-  startSequence: () => set({ isRunning: true }),
-  pauseSequence: () => set({ isRunning: false }),
-  stopSequence: () => set({ isRunning: false, timeline: [] }),
+  startSequence: () => {
+    set((state) => {
+      // 启动序列并添加通知
+      const notificationId = `notification_${Date.now()}`;
+      return {
+        isRunning: true,
+        notifications: [
+          ...state.notifications,
+          {
+            id: notificationId,
+            message: "序列已开始运行",
+            type: "info",
+            timestamp: new Date(),
+          },
+        ],
+        // 重置进度为0
+        currentProgress: 0,
+      };
+    });
+
+    // 启动进度模拟
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+      progress += Math.random() * 2;
+      if (progress > 100) {
+        progress = 100;
+        clearInterval(progressInterval);
+      }
+      set({ currentProgress: Math.round(progress) });
+    }, 1000);
+  },
+  pauseSequence: () => {
+    set((state) => ({
+      isRunning: false,
+      notifications: [
+        ...state.notifications,
+        {
+          id: `notification_${Date.now()}`,
+          message: "序列已暂停",
+          type: "warning",
+          timestamp: new Date(),
+        },
+      ],
+    }));
+  },
+  stopSequence: () => {
+    set((state) => ({
+      isRunning: false,
+      timeline: [],
+      currentProgress: 0,
+      notifications: [
+        ...state.notifications,
+        {
+          id: `notification_${Date.now()}`,
+          message: "序列已停止",
+          type: "error",
+          timestamp: new Date(),
+        },
+      ],
+    }));
+  },
 
   // Error handling
-  errors: [],
-  clearErrors: () => set({ errors: [] }),
+  errors: {},
+  clearErrors: () => set({ errors: {} }),
 
   // Autofocus
   autofocusConfig: DEFAULT_AUTOFOCUS_CONFIG,
@@ -334,12 +437,94 @@ export const useSequencerStore = create<SequencerStore>((set) => ({
     errors: [],
   },
   focusQualityMetrics: DEFAULT_FOCUS_QUALITY_METRICS,
+
+  // 目标设置相关状态和方法
+  settings: DEFAULT_SETTINGS,
+  setSetting: <K extends keyof TargetSettings>(
+    key: K,
+    value: TargetSettings[K]
+  ) => {
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        [key]: value,
+      },
+    }));
+  },
+  saveSettings: async () => {
+    // 模拟保存操作
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    set((state) => ({
+      notifications: [
+        ...state.notifications,
+        {
+          id: `notification_${Date.now()}`,
+          message: "设置已保存",
+          type: "success",
+          timestamp: new Date(),
+        },
+      ],
+    }));
+  },
+  resetSettings: () => {
+    set({
+      settings: DEFAULT_SETTINGS,
+      notifications: [
+        {
+          id: `notification_${Date.now()}`,
+          message: "设置已重置为默认值",
+          type: "info",
+          timestamp: new Date(),
+        },
+      ],
+    });
+  },
+
+  // 通知相关状态
+  notifications: [],
+  addNotification: (notification) => {
+    const id = `notification_${Date.now()}`;
+    set((state) => ({
+      notifications: [
+        ...state.notifications,
+        {
+          ...notification,
+          id,
+          timestamp: new Date(),
+        },
+      ],
+    }));
+
+    // 5秒后自动移除通知
+    setTimeout(() => {
+      set((state) => ({
+        notifications: state.notifications.filter((n) => n.id !== id),
+      }));
+    }, 5000);
+  },
+  removeNotification: (id) => {
+    set((state) => ({
+      notifications: state.notifications.filter((n) => n.id !== id),
+    }));
+  },
+  clearNotifications: () => {
+    set({ notifications: [] });
+  },
+
+  // 进度相关状态
+  currentProgress: 0,
+  updateProgress: (progress) => {
+    set({ currentProgress: progress });
+  },
 }));
 
 // Custom hooks
-export const useAutofocusConfig = () => useSequencerStore((state) => state.autofocusConfig);
-export const useExecutionStatus = () => useSequencerStore((state) => state.executionStatus);
-export const useFocusQualityMetrics = () => useSequencerStore((state) => state.focusQualityMetrics);
+export const useAutofocusConfig = () =>
+  useSequencerStore((state) => state.autofocusConfig);
+export const useExecutionStatus = () =>
+  useSequencerStore((state) => state.executionStatus);
+export const useFocusQualityMetrics = () =>
+  useSequencerStore((state) => state.focusQualityMetrics);
 
 // Helper types
 export type AutofocusConfigKey = keyof AutofocusConfig;

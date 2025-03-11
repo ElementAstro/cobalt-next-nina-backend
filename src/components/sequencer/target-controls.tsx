@@ -22,6 +22,14 @@ import {
   Loader2,
   Save,
   Pause,
+  Clock,
+  ArrowUpDown,
+  RefreshCw,
+  Timer,
+  BarChart2,
+  Palette,
+  Activity,
+  AlertTriangle,
 } from "lucide-react";
 import { useMediaQuery } from "react-responsive";
 import { TargetSettings } from "@/types/sequencer";
@@ -30,6 +38,13 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
+// 添加缺少的导入
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface AdvancedSettings {
   retryCount: number;
@@ -190,20 +205,28 @@ export function TargetControls() {
   };
 
   return (
-    <div className="bg-gray-900 rounded-md shadow-md">
+    <div className="bg-gray-900/70 rounded-md shadow-md border border-gray-800 backdrop-blur-sm transition-all hover:border-gray-700">
       {/* 系统通知 */}
       <AnimatePresence>
         {notifications.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="p-2 bg-blue-800 text-white rounded-t-md"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="p-3 bg-blue-800/70 text-white rounded-t-md border-b border-blue-700"
           >
             {notifications.map((noti) => (
-              <div key={noti.id} className="text-sm">
+              <motion.div
+                key={noti.id}
+                className="text-sm flex items-center gap-2"
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ type: "spring" }}
+              >
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-300 animate-pulse" />
                 {noti.message}
-              </div>
+              </motion.div>
             ))}
           </motion.div>
         )}
@@ -214,12 +237,15 @@ export function TargetControls() {
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
-            className="w-full flex justify-between items-center h-10 hover:bg-gray-800/50 border-b border-gray-800"
+            className="w-full flex justify-between items-center h-10 hover:bg-gray-800/50 border-b border-gray-800 group"
           >
-            <span className="text-sm font-medium">目标控制</span>
+            <span className="text-sm font-medium group-hover:text-teal-400 transition-colors">
+              目标控制
+            </span>
             <motion.div
               animate={{ rotate: isCollapsed ? 0 : 180 }}
               transition={{ type: "spring", stiffness: 300 }}
+              className="text-gray-400 group-hover:text-teal-400 transition-colors"
             >
               <ChevronDown className="h-4 w-4" />
             </motion.div>
@@ -230,167 +256,250 @@ export function TargetControls() {
           {/* 主内容区域 */}
           <div className="h-[50vh]">
             <ScrollArea className="h-full">
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-6">
                 {/* 基础设置 */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, y: 20 },
-                      visible: { opacity: 1, y: 0 },
-                    }}
-                  >
-                    <Label
-                      htmlFor="delay-start"
-                      className="text-sm text-gray-400"
-                    >
-                      延迟开始
-                    </Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Input
-                        id="delay-start"
-                        type="number"
-                        value={settings.delayStart}
-                        onChange={(e) =>
-                          handleChange("delayStart", e.target.value)
-                        }
-                        className={`w-20 bg-gray-800 border ${
-                          state.errors.delayStart
-                            ? "border-red-500"
-                            : "border-gray-700"
-                        } text-white`}
-                      />
-                      <span className="text-gray-400">秒</span>
-                    </div>
-                    {state.errors.delayStart && (
-                      <span className="text-red-500 text-sm">
-                        {state.errors.delayStart}
-                      </span>
-                    )}
-                  </motion.div>
-
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, y: 20 },
-                      visible: { opacity: 1, y: 0 },
-                    }}
-                  >
-                    <Label
-                      htmlFor="sequence-mode"
-                      className="text-sm text-gray-400"
-                    >
-                      序列模式
-                    </Label>
-                    <Select
-                      value={settings.sequenceMode}
-                      onValueChange={(value) =>
-                        handleChange("sequenceMode", value)
-                      }
-                    >
-                      <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                        <SelectItem value="one-after-another">
-                          一个接一个
-                        </SelectItem>
-                        <SelectItem value="simultaneous">同时进行</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </motion.div>
-
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, y: 20 },
-                      visible: { opacity: 1, y: 0 },
-                    }}
-                  >
-                    <Label
-                      htmlFor="retry-count"
-                      className="text-sm text-gray-400"
-                    >
-                      重试次数
-                    </Label>
-                    <Input
-                      id="retry-count"
-                      type="number"
-                      value={settings.retryCount || 0}
-                      onChange={(e) =>
-                        handleChange("retryCount", e.target.value)
-                      }
-                      className={`w-20 bg-gray-800 border ${
-                        state.errors.retryCount
-                          ? "border-red-500"
-                          : "border-gray-700"
-                      } text-white mt-1`}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <motion.div
+                      className="w-1 h-5 bg-teal-500"
+                      layoutId="settingHighlight"
                     />
-                    {state.errors.retryCount && (
-                      <span className="text-red-500 text-sm">
-                        {state.errors.retryCount}
-                      </span>
-                    )}
-                  </motion.div>
+                    <h3 className="text-md font-medium">基础设置</h3>
+                  </div>
 
-                  <motion.div
-                    variants={{
-                      hidden: { opacity: 0, y: 20 },
-                      visible: { opacity: 1, y: 0 },
-                    }}
-                  >
-                    <Label htmlFor="timeout" className="text-sm text-gray-400">
-                      超时时间
-                    </Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Input
-                        id="timeout"
-                        type="number"
-                        value={settings.timeout || 0}
-                        onChange={(e) =>
-                          handleChange("timeout", e.target.value)
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pl-3">
+                    <motion.div
+                      variants={{
+                        hidden: { opacity: 0, y: 20 },
+                        visible: { opacity: 1, y: 0 },
+                      }}
+                      initial="hidden"
+                      animate="visible"
+                      transition={{ delay: 0.2 }}
+                    >
+                      <Label
+                        htmlFor="delay-start"
+                        className="text-sm text-gray-400 flex items-center gap-1 mb-1.5"
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        延迟开始
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="delay-start"
+                          type="number"
+                          value={settings.delayStart}
+                          onChange={(e) =>
+                            handleChange("delayStart", e.target.value)
+                          }
+                          className={`w-20 bg-gray-800/70 border ${
+                            state.errors.delayStart
+                              ? "border-red-500 focus:ring-red-500/50"
+                              : "border-gray-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/50"
+                          } text-white transition-colors`}
+                        />
+                        <span className="text-gray-400">秒</span>
+                      </div>
+                      <AnimatePresence>
+                        {state.errors.delayStart && (
+                          <motion.span
+                            className="text-red-500 text-xs mt-1 block"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                          >
+                            {state.errors.delayStart}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+
+                    <motion.div
+                      variants={{
+                        hidden: { opacity: 0, y: 20 },
+                        visible: { opacity: 1, y: 0 },
+                      }}
+                      initial="hidden"
+                      animate="visible"
+                      transition={{ delay: 0.3 }}
+                    >
+                      <Label
+                        htmlFor="sequence-mode"
+                        className="text-sm text-gray-400 flex items-center gap-1 mb-1.5"
+                      >
+                        <ArrowUpDown className="w-3.5 h-3.5" />
+                        序列模式
+                      </Label>
+                      <Select
+                        value={settings.sequenceMode}
+                        onValueChange={(value) =>
+                          handleChange("sequenceMode", value)
                         }
-                        className={`w-20 bg-gray-800 border ${
-                          state.errors.timeout
-                            ? "border-red-500"
-                            : "border-gray-700"
-                        } text-white`}
+                      >
+                        <SelectTrigger className="bg-gray-800/70 border-gray-700 text-white hover:border-gray-600 transition-colors">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-800 border-gray-700 text-white">
+                          <SelectItem
+                            value="one-after-another"
+                            className="focus:bg-teal-500/20"
+                          >
+                            一个接一个
+                          </SelectItem>
+                          <SelectItem
+                            value="simultaneous"
+                            className="focus:bg-teal-500/20"
+                          >
+                            同时进行
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </motion.div>
+
+                    <motion.div
+                      variants={{
+                        hidden: { opacity: 0, y: 20 },
+                        visible: { opacity: 1, y: 0 },
+                      }}
+                      initial="hidden"
+                      animate="visible"
+                      transition={{ delay: 0.4 }}
+                    >
+                      <Label
+                        htmlFor="retry-count"
+                        className="text-sm text-gray-400 flex items-center gap-1 mb-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        重试次数
+                      </Label>
+                      <Input
+                        id="retry-count"
+                        type="number"
+                        value={settings.retryCount || 0}
+                        onChange={(e) =>
+                          handleChange("retryCount", e.target.value)
+                        }
+                        className={`w-20 bg-gray-800/70 border ${
+                          state.errors.retryCount
+                            ? "border-red-500 focus:ring-red-500/50"
+                            : "border-gray-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/50"
+                        } text-white transition-colors`}
                       />
-                      <span className="text-gray-400">秒</span>
-                    </div>
-                    {state.errors.timeout && (
-                      <span className="text-red-500 text-sm">
-                        {state.errors.timeout}
-                      </span>
-                    )}
-                  </motion.div>
-                </div>
+                      <AnimatePresence>
+                        {state.errors.retryCount && (
+                          <motion.span
+                            className="text-red-500 text-xs mt-1 block"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                          >
+                            {state.errors.retryCount}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+
+                    <motion.div
+                      variants={{
+                        hidden: { opacity: 0, y: 20 },
+                        visible: { opacity: 1, y: 0 },
+                      }}
+                      initial="hidden"
+                      animate="visible"
+                      transition={{ delay: 0.5 }}
+                    >
+                      <Label
+                        htmlFor="timeout"
+                        className="text-sm text-gray-400 flex items-center gap-1 mb-1.5"
+                      >
+                        <Timer className="w-3.5 h-3.5" />
+                        超时时间
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="timeout"
+                          type="number"
+                          value={settings.timeout || 0}
+                          onChange={(e) =>
+                            handleChange("timeout", e.target.value)
+                          }
+                          className={`w-20 bg-gray-800/70 border ${
+                            state.errors.timeout
+                              ? "border-red-500 focus:ring-red-500/50"
+                              : "border-gray-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/50"
+                          } text-white transition-colors`}
+                        />
+                        <span className="text-gray-400">秒</span>
+                      </div>
+                      <AnimatePresence>
+                        {state.errors.timeout && (
+                          <motion.span
+                            className="text-red-500 text-xs mt-1 block"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                          >
+                            {state.errors.timeout}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  </div>
+                </motion.div>
 
                 {/* 高级设置 */}
-                <div className="space-y-4">
-                  <motion.div
-                    className="mt-2"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="text-sm font-medium text-gray-400">
-                        高级设置
-                      </div>
-                      <Button variant="outline" onClick={toggleExpansion}>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.6 }}
+                  className="space-y-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <motion.div
+                        className="w-1 h-5 bg-purple-500"
+                        layoutId="settingHighlight"
+                        transition={{ duration: 0.3 }}
+                      />
+                      <h3 className="text-md font-medium">高级设置</h3>
+                    </div>
+                    <motion.div
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <Button
+                        variant="outline"
+                        onClick={toggleExpansion}
+                        className="text-xs h-7 bg-gray-800/50 border-gray-700 hover:bg-gray-800 transition-colors"
+                      >
                         {isExpanded ? "隐藏详情" : "显示详情"}
                       </Button>
-                    </div>
+                    </motion.div>
+                  </div>
+
+                  <AnimatePresence>
                     {isExpanded && (
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                        <motion.div
-                          variants={{
-                            hidden: { opacity: 0, y: 20 },
-                            visible: { opacity: 1, y: 0 },
-                          }}
-                        >
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 300,
+                          damping: 30,
+                        }}
+                        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pl-3"
+                      >
+                        <div>
                           <Label
                             htmlFor="priority"
-                            className="text-sm text-gray-400"
+                            className="text-sm text-gray-400 mb-1.5 flex items-center gap-1"
                           >
+                            <BarChart2 className="w-3.5 h-3.5" />
                             任务优先级
                           </Label>
                           <Select
@@ -399,27 +508,47 @@ export function TargetControls() {
                               handleAdvancedChange("priority", value)
                             }
                           >
-                            <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
+                            <SelectTrigger className="bg-gray-800/70 border-gray-700 text-white hover:border-gray-600 transition-colors">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                              <SelectItem value="low">低</SelectItem>
-                              <SelectItem value="medium">中</SelectItem>
-                              <SelectItem value="high">高</SelectItem>
+                              <SelectItem
+                                value="low"
+                                className="focus:bg-teal-500/20"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-blue-400" />
+                                  低
+                                </div>
+                              </SelectItem>
+                              <SelectItem
+                                value="medium"
+                                className="focus:bg-teal-500/20"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-yellow-400" />
+                                  中
+                                </div>
+                              </SelectItem>
+                              <SelectItem
+                                value="high"
+                                className="focus:bg-teal-500/20"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                                  高
+                                </div>
+                              </SelectItem>
                             </SelectContent>
                           </Select>
-                        </motion.div>
+                        </div>
 
-                        <motion.div
-                          variants={{
-                            hidden: { opacity: 0, y: 20 },
-                            visible: { opacity: 1, y: 0 },
-                          }}
-                        >
+                        <div>
                           <Label
                             htmlFor="color-theme"
-                            className="text-sm text-gray-400"
+                            className="text-sm text-gray-400 mb-1.5 flex items-center gap-1"
                           >
+                            <Palette className="w-3.5 h-3.5" />
                             颜色主题
                           </Label>
                           <Select
@@ -428,80 +557,198 @@ export function TargetControls() {
                               handleAdvancedChange("colorTheme", value)
                             }
                           >
-                            <SelectTrigger className="bg-gray-800 border-gray-700 text-white mt-1">
+                            <SelectTrigger className="bg-gray-800/70 border-gray-700 text-white hover:border-gray-600 transition-colors">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                              <SelectItem value="default">默认</SelectItem>
-                              <SelectItem value="dark">暗黑</SelectItem>
-                              <SelectItem value="light">明亮</SelectItem>
-                              <SelectItem value="blue">蓝色</SelectItem>
-                              <SelectItem value="green">绿色</SelectItem>
+                              <SelectItem
+                                value="default"
+                                className="focus:bg-teal-500/20"
+                              >
+                                默认
+                              </SelectItem>
+                              <SelectItem
+                                value="dark"
+                                className="focus:bg-teal-500/20"
+                              >
+                                暗黑
+                              </SelectItem>
+                              <SelectItem
+                                value="light"
+                                className="focus:bg-teal-500/20"
+                              >
+                                明亮
+                              </SelectItem>
+                              <SelectItem
+                                value="blue"
+                                className="focus:bg-teal-500/20"
+                              >
+                                蓝色
+                              </SelectItem>
+                              <SelectItem
+                                value="green"
+                                className="focus:bg-teal-500/20"
+                              >
+                                绿色
+                              </SelectItem>
                             </SelectContent>
                           </Select>
-                        </motion.div>
-                      </div>
+                        </div>
+                      </motion.div>
                     )}
-                  </motion.div>
-                </div>
+                  </AnimatePresence>
+                </motion.div>
 
                 {/* 预设管理 */}
-                <div className="space-y-4">
-                  <motion.div
-                    className="mt-6"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                  >
-                    <div className="text-lg font-medium text-gray-400 mb-4">
-                      预设管理
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <Select
-                        value={selectedPreset || ""}
-                        onValueChange={handleLoadPreset}
-                      >
-                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                          <SelectValue placeholder="选择预设" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                          {presets.map((preset) => (
-                            <SelectItem key={preset.name} value={preset.name}>
-                              {preset.name}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.8 }}
+                  className="pt-4 border-t border-gray-800"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <motion.div
+                      className="w-1 h-5 bg-amber-500"
+                      layoutId="settingHighlight"
+                      transition={{ duration: 0.3 }}
+                    />
+                    <h3 className="text-md font-medium">预设管理</h3>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2 pl-3">
+                    <Select
+                      value={selectedPreset || ""}
+                      onValueChange={handleLoadPreset}
+                    >
+                      <SelectTrigger className="bg-gray-800/70 border-gray-700 text-white hover:border-gray-600 transition-colors">
+                        <SelectValue placeholder="选择预设" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-800 border-gray-700 text-white max-h-60">
+                        {presets.length === 0 ? (
+                          <div className="p-2 text-sm text-gray-400 text-center">
+                            暂无预设
+                          </div>
+                        ) : (
+                          presets.map((preset) => (
+                            <SelectItem
+                              key={preset.name}
+                              value={preset.name}
+                              className="focus:bg-teal-500/20"
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <span>{preset.name}</span>
+                                <span className="text-xs text-gray-400">
+                                  {preset.settings.createdAt.toLocaleDateString()}
+                                </span>
+                              </div>
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+
+                    <motion.div
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                    >
                       <Button
                         onClick={handleSavePreset}
-                        className="bg-purple-500 hover:bg-purple-600 text-white"
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white transition-colors"
                       >
+                        <Save className="mr-2 h-4 w-4" />
                         保存当前为预设
                       </Button>
-                    </div>
-                  </motion.div>
-                </div>
+                    </motion.div>
+                  </div>
+                </motion.div>
 
                 {/* 显示当前进度条 */}
-                <div className="mt-4">
-                  <Label className="text-sm text-gray-400">当前进度</Label>
-                  <progress
-                    className="w-full"
-                    value={currentProgress}
-                    max={100}
-                  />
-                </div>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1 }}
+                  className="mt-8 pt-4 border-t border-gray-800"
+                >
+                  <Label className="text-sm text-gray-400 flex items-center gap-1 mb-2">
+                    <Activity className="w-3.5 h-3.5" />
+                    当前进度
+                  </Label>
+                  <div className="relative">
+                    <progress
+                      className="w-full h-2 rounded-full overflow-hidden appearance-none [&::-webkit-progress-bar]:bg-gray-800 [&::-webkit-progress-value]:bg-teal-500 [&::-moz-progress-bar]:bg-teal-500"
+                      value={currentProgress}
+                      max={100}
+                    />
+                    <AnimatePresence>
+                      {currentProgress > 0 && currentProgress < 100 && (
+                        <motion.div
+                          className="absolute h-2 bg-white/30 w-1 top-0 rounded-full"
+                          initial={{ left: "0%" }}
+                          animate={{
+                            left: [
+                              `${Math.max(0, currentProgress - 3)}%`,
+                              `${Math.min(100, currentProgress + 3)}%`,
+                            ],
+                          }}
+                          exit={{ opacity: 0 }}
+                          transition={{
+                            duration: 1.5,
+                            repeat: Infinity,
+                            repeatType: "reverse",
+                            ease: "easeInOut",
+                          }}
+                        />
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <div className="flex justify-between mt-1">
+                    <span className="text-xs text-gray-400">0%</span>
+                    <motion.span
+                      className="text-xs font-medium"
+                      style={{
+                        color: `hsl(${
+                          Math.min(currentProgress, 100) * 1.2
+                        }, 70%, 60%)`,
+                      }}
+                    >
+                      {currentProgress}%
+                    </motion.span>
+                    <span className="text-xs text-gray-400">100%</span>
+                  </div>
+                </motion.div>
 
                 {/* 显示Store错误（storeErrors） */}
-                {storeErrors && Object.keys(storeErrors).length > 0 && (
-                  <div className="mt-2 p-2 bg-red-800 text-white rounded">
-                    {Object.entries(storeErrors).map(([key, msg]) => (
-                      <div key={key} className="text-sm">
-                        {key}: {msg}
+                <AnimatePresence>
+                  {storeErrors && Object.keys(storeErrors).length > 0 && (
+                    <motion.div
+                      className="mt-2 p-3 bg-gradient-to-r from-red-900/50 to-red-800/30 border border-red-700/50 text-white rounded-lg"
+                      initial={{ opacity: 0, height: 0, y: -20 }}
+                      animate={{ opacity: 1, height: "auto", y: 0 }}
+                      exit={{ opacity: 0, height: 0, y: -20 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 300,
+                        damping: 30,
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-2 text-red-300">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span className="font-medium">错误信息</span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      {Object.entries(storeErrors).map(([key, msg]) => (
+                        <motion.div
+                          key={key}
+                          className="text-sm mb-1 last:mb-0 pl-6"
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ type: "spring" }}
+                        >
+                          <span className="text-red-300">{key}:</span> {msg}
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </ScrollArea>
           </div>
@@ -510,55 +757,149 @@ export function TargetControls() {
           <div className="border-t border-gray-800 p-2 bg-gray-900/90 backdrop-blur-sm">
             <div className="flex items-center justify-between space-x-2">
               <div className="flex items-center space-x-2">
-                <Button
-                  onClick={handleSave}
-                  disabled={isRunning}
-                  className="bg-teal-500 text-white hover:bg-teal-600"
-                  size="sm"
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  {state.isSaving ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                  )}
-                  保存
-                </Button>
-                <Button
-                  onClick={resetSettings}
-                  variant="destructive"
-                  size="sm"
-                  className="text-white hover:bg-red-600"
+                  <Button
+                    onClick={handleSave}
+                    disabled={isRunning}
+                    className="bg-teal-600 text-white hover:bg-teal-700 transition-colors shadow-md hover:shadow-lg"
+                    size="sm"
+                  >
+                    {state.isSaving ? (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{
+                          duration: 1,
+                          repeat: Infinity,
+                          ease: "linear",
+                        }}
+                        className="mr-2"
+                      >
+                        <Loader2 className="h-4 w-4" />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        whileHover={{ scale: 1.1 }}
+                        transition={{ duration: 0.2 }}
+                        className="mr-2"
+                      >
+                        <Save className="h-4 w-4" />
+                      </motion.div>
+                    )}
+                    保存
+                  </Button>
+                </motion.div>
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  <X className="mr-2 h-4 w-4" />
-                  重置
-                </Button>
+                  <Button
+                    onClick={resetSettings}
+                    variant="destructive"
+                    size="sm"
+                    className="text-white hover:bg-red-600 transition-colors shadow-md hover:shadow-lg"
+                  >
+                    <motion.div
+                      whileHover={{ rotate: 180 }}
+                      transition={{ duration: 0.3 }}
+                      className="mr-2"
+                    >
+                      <X className="h-4 w-4" />
+                    </motion.div>
+                    重置
+                  </Button>
+                </motion.div>
               </div>
 
               <div className="flex items-center space-x-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={startSequence}
-                  disabled={isRunning}
-                >
-                  <Play className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={pauseSequence}
-                  disabled={!isRunning}
-                >
-                  <Pause className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={stopSequence}
-                  disabled={!isRunning}
-                >
-                  <StopCircle className="w-4 h-4" />
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <motion.div
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <Button
+                          variant={isRunning ? "ghost" : "outline"}
+                          size="sm"
+                          onClick={startSequence}
+                          disabled={isRunning}
+                          className={
+                            isRunning
+                              ? ""
+                              : "bg-green-600/10 text-green-400 border-green-500/30 hover:bg-green-600/20"
+                          }
+                        >
+                          <motion.div
+                            animate={!isRunning ? { x: [0, 2, 0] } : {}}
+                            transition={{
+                              duration: 1,
+                              repeat: Infinity,
+                              repeatType: "mirror",
+                            }}
+                          >
+                            <Play className="w-4 h-4" />
+                          </motion.div>
+                        </Button>
+                      </motion.div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">开始执行</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <motion.div
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <Button
+                          variant={!isRunning ? "ghost" : "outline"}
+                          size="sm"
+                          onClick={pauseSequence}
+                          disabled={!isRunning}
+                          className={
+                            !isRunning
+                              ? ""
+                              : "bg-amber-600/10 text-amber-400 border-amber-500/30 hover:bg-amber-600/20"
+                          }
+                        >
+                          <Pause className="w-4 h-4" />
+                        </Button>
+                      </motion.div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">暂停执行</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <motion.div
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={stopSequence}
+                          disabled={!isRunning}
+                          className={
+                            !isRunning
+                              ? ""
+                              : "hover:bg-red-600/10 hover:text-red-400"
+                          }
+                        >
+                          <StopCircle className="w-4 h-4" />
+                        </Button>
+                      </motion.div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">停止执行</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </div>

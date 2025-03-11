@@ -199,6 +199,7 @@ export interface TargetSettings {
   meridianFlip: boolean;
   warmCamera: boolean;
   parkMount: boolean;
+  createdAt: Date;
 }
 
 export interface Target {

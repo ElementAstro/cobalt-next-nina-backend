@@ -53,9 +53,14 @@ const ValidationStatus = ({ status, children }: ValidationStatusProps) => {
 
   const baseClass = "border rounded-md px-2 py-0.5 text-xs font-medium inline-flex items-center gap-1";
   return (
-    <span className={`${baseClass} ${variants[status]}`}>
+    <motion.span 
+      className={`${baseClass} ${variants[status]}`}
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.2 }}
+    >
       {children}
-    </span>
+    </motion.span>
   );
 };
 
@@ -143,21 +148,38 @@ export function TaskValidation() {
       case "running":
         return (
           <ValidationStatus status="warning">
-            <Loader2 className="w-3 h-3 animate-spin" />
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+            >
+              <Loader2 className="w-3 h-3" />
+            </motion.div>
             验证中
           </ValidationStatus>
         );
       case "completed":
         return (
           <ValidationStatus status="success">
-            <CheckCircle className="w-3 h-3" />
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+            >
+              <CheckCircle className="w-3 h-3" />
+            </motion.div>
             已通过
           </ValidationStatus>
         );
       case "failed":
         return (
           <ValidationStatus status="error">
-            <XCircle className="w-3 h-3" />
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+            >
+              <XCircle className="w-3 h-3" />
+            </motion.div>
             失败
           </ValidationStatus>
         );
@@ -183,7 +205,7 @@ export function TaskValidation() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
       >
-        <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
+        <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800 hover:border-gray-700 transition-colors">
           <CardHeader className="space-y-1">
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-gray-400" />
@@ -191,7 +213,19 @@ export function TaskValidation() {
             </div>
           </CardHeader>
           <CardContent className="flex flex-col items-center justify-center p-8 text-gray-400">
-            <AlertTriangle className="w-12 h-12 mb-4 opacity-50" />
+            <motion.div
+              animate={{ 
+                y: [0, -5, 0],
+                opacity: [0.5, 0.8, 0.5] 
+              }}
+              transition={{ 
+                duration: 2, 
+                repeat: Infinity,
+                repeatType: "reverse" 
+              }}
+            >
+              <AlertTriangle className="w-12 h-12 mb-4 opacity-50" />
+            </motion.div>
             <p>请先选择一个目标</p>
           </CardContent>
         </Card>
@@ -207,11 +241,16 @@ export function TaskValidation() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
       >
-        <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800">
+        <Card className="bg-gray-900/50 backdrop-blur-sm border-gray-800 hover:border-gray-700 transition-colors">
           <CardHeader className="space-y-1">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-teal-500" />
+                <motion.div
+                  whileHover={{ rotate: 15 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 10 }}
+                >
+                  <Shield className="w-5 h-5 text-teal-500" />
+                </motion.div>
                 <CardTitle className="text-xl">任务验证</CardTitle>
                 <Badge variant="secondary" className="text-xs">
                   {activeTarget.tasks.length} 个任务
@@ -224,7 +263,7 @@ export function TaskValidation() {
                       size="sm"
                       onClick={handleValidateAll}
                       disabled={isValidating || activeTarget.tasks.length === 0}
-                      className="h-8"
+                      className="h-8 bg-teal-600 hover:bg-teal-700 text-white transition-all"
                     >
                       {isValidating ? (
                         <motion.div
@@ -265,29 +304,46 @@ export function TaskValidation() {
                 </TableHeader>
                 <TableBody>
                   <AnimatePresence mode="popLayout">
-                    {activeTarget.tasks.map((task) => (
+                    {activeTarget.tasks.map((task, index) => (
                       <motion.tr
                         key={task.id}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 20 }}
+                        transition={{ delay: index * 0.05 }}
                         className="group hover:bg-gray-800/30"
                       >
                         <TableCell className="font-medium">
-                          {task.name}
+                          <motion.div
+                            whileHover={{ x: 3 }}
+                            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                          >
+                            {task.name}
+                          </motion.div>
                         </TableCell>
                         <TableCell>
                           {getTaskStatusDisplay(task.id)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <Progress
-                              value={getSuccessRate(taskValidation[task.id])}
-                              className="w-[60px] h-2"
-                            />
-                            <span className="text-sm text-gray-400">
+                            <motion.div className="w-[60px]"
+                              initial={{ scaleX: 0 }}
+                              animate={{ scaleX: 1 }}
+                              transition={{ delay: index * 0.05 + 0.2 }}
+                            >
+                              <Progress
+                                value={getSuccessRate(taskValidation[task.id])}
+                                className="h-2"
+                              />
+                            </motion.div>
+                            <motion.span 
+                              className="text-sm text-gray-400"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ delay: index * 0.05 + 0.4 }}
+                            >
                               {Math.round(getSuccessRate(taskValidation[task.id]))}%
-                            </span>
+                            </motion.span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -299,12 +355,17 @@ export function TaskValidation() {
                                   size="sm"
                                   onClick={() => handleValidateTask(task.id)}
                                   disabled={isValidating}
-                                  className="h-7 opacity-0 group-hover:opacity-100"
+                                  className="h-7 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-teal-500/20"
                                 >
                                   {currentTaskId === task.id ? (
                                     <Loader2 className="w-4 h-4 animate-spin" />
                                   ) : (
-                                    <RefreshCw className="w-4 h-4" />
+                                    <motion.div
+                                      whileHover={{ rotate: 180 }}
+                                      transition={{ duration: 0.3 }}
+                                    >
+                                      <RefreshCw className="w-4 h-4" />
+                                    </motion.div>
                                   )}
                                 </Button>
                               </TooltipTrigger>
@@ -326,7 +387,19 @@ export function TaskValidation() {
                   animate={{ opacity: 1, y: 0 }}
                   className="flex flex-col items-center justify-center p-8 text-gray-400"
                 >
-                  <Info className="w-12 h-12 mb-4 opacity-50" />
+                  <motion.div
+                    animate={{ 
+                      scale: [1, 1.05, 1],
+                      opacity: [0.5, 0.7, 0.5] 
+                    }}
+                    transition={{ 
+                      duration: 3, 
+                      repeat: Infinity,
+                      repeatType: "reverse" 
+                    }}
+                  >
+                    <Info className="w-12 h-12 mb-4 opacity-50" />
+                  </motion.div>
                   <p>当前目标没有任务</p>
                 </motion.div>
               )}
