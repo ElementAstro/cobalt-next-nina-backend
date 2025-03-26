@@ -8,6 +8,9 @@ import {
   Image as ImageIcon,
   Settings,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useHotkeys } from "react-hotkeys-hook";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ControlBarProps {
   zoom: number;
@@ -23,6 +26,67 @@ interface ControlBarProps {
   onToggleSettings: () => void;
 }
 
+const ControlButton = ({
+  children,
+  onClick,
+  disabled = false,
+  tooltip,
+  hotkey,
+  active = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  tooltip: string;
+  hotkey?: string;
+  active?: boolean;
+}) => {
+  useHotkeys(
+    hotkey || "",
+    (e) => {
+      e.preventDefault();
+      onClick();
+    },
+    { enabled: !!hotkey && !disabled }
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <motion.div
+          whileHover={{ scale: disabled ? 1 : 1.1 }}
+          whileTap={{ scale: disabled ? 1 : 0.95 }}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClick}
+            disabled={disabled}
+            className={`relative ${active ? "bg-muted" : ""}`}
+            aria-label={tooltip}
+          >
+            {children}
+            {active && (
+              <motion.span
+                className="absolute inset-0 rounded-full bg-current opacity-10"
+                layoutId="activeIndicator"
+              />
+            )}
+          </Button>
+        </motion.div>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <div className="flex items-center gap-1">
+          <span>{tooltip}</span>
+          {hotkey && (
+            <span className="text-xs opacity-70">({hotkey.toUpperCase()})</span>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+};
+
 export function ControlBar({
   zoom,
   isCapturing,
@@ -37,69 +101,96 @@ export function ControlBar({
   onToggleSettings,
 }: ControlBarProps) {
   return (
-    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 backdrop-blur-sm rounded-lg p-2 flex gap-2">
-      <Button
-        variant="ghost"
-        size="icon"
+    <motion.div
+      initial={{ y: 20, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 20, opacity: 0 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 backdrop-blur-sm rounded-lg p-2 flex gap-2 shadow-lg"
+    >
+      <ControlButton
         onClick={onZoomOut}
         disabled={zoom <= 0.5}
-        title="缩小 (-)"
-      >
-        <ZoomOut className="h-4 w-4" />
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onZoomIn}
-        disabled={zoom >= 3}
-        title="放大 (+)"
+        tooltip="缩小"
+        hotkey="-"
+        active={false}
       >
         <ZoomIn className="h-4 w-4" />
-      </Button>
+      </ControlButton>
 
-      <Button variant="ghost" size="icon" onClick={onRotate} title="旋转 (R)">
+      <ControlButton
+        onClick={onZoomIn}
+        disabled={zoom >= 3}
+        tooltip="放大"
+        hotkey="="
+        active={false}
+      >
+        <ZoomOut className="h-4 w-4" />
+      </ControlButton>
+
+      <ControlButton
+        onClick={onRotate}
+        tooltip="旋转"
+        hotkey="r"
+        active={false}
+      >
         <RotateCw className="h-4 w-4" />
-      </Button>
+      </ControlButton>
 
-      <Button
-        variant="ghost"
-        size="icon"
+      <ControlButton
         onClick={onToggleGrid}
-        className={showGrid ? "bg-muted" : ""}
-        title="网格 (G)"
+        tooltip="网格"
+        hotkey="g"
+        active={showGrid}
       >
         <Grid className="h-4 w-4" />
-      </Button>
+      </ControlButton>
 
-      <Button
-        variant="ghost"
-        size="icon"
+      <ControlButton
         onClick={onCapture}
         disabled={isCapturing}
-        title="拍摄 (空格)"
+        tooltip="拍摄"
+        hotkey="space"
+        active={false}
       >
-        <Camera className="h-4 w-4" />
-      </Button>
+        <AnimatePresence mode="wait">
+          {isCapturing ? (
+            <motion.div
+              key="capturing"
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.8 }}
+              className="h-3 w-3 rounded-full bg-red-500"
+            />
+          ) : (
+            <motion.div
+              key="camera"
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.8 }}
+            >
+              <Camera className="h-4 w-4" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </ControlButton>
 
-      <Button
-        variant="ghost"
-        size="icon"
+      <ControlButton
         onClick={onOpenLightBox}
-        title="图片库"
+        tooltip="图片库"
+        active={false}
       >
         <ImageIcon className="h-4 w-4" />
-      </Button>
+      </ControlButton>
 
-      <Button
-        variant="ghost"
-        size="icon"
+      <ControlButton
         onClick={onToggleSettings}
-        className={showSettings ? "bg-muted" : ""}
-        title="设置 (S)"
+        tooltip="设置"
+        hotkey="s"
+        active={showSettings}
       >
         <Settings className="h-4 w-4" />
-      </Button>
-    </div>
+      </ControlButton>
+    </motion.div>
   );
 }

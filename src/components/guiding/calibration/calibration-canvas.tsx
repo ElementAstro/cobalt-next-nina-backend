@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCalibrationStore } from "@/stores/guiding/calibrationStore";
 import {
@@ -37,6 +37,8 @@ export default function CalibrationCanvas() {
   const animationFrameRef = useRef<number | null>(null);
 
   const [isDragging, setIsDragging] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const [isFocus, setIsFocus] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dpr, setDpr] = useState(1);
@@ -46,15 +48,15 @@ export default function CalibrationCanvas() {
     lastFrameTime: performance.now(),
   });
 
-  const {
-    showGrid,
-    lineLength,
-    showAnimation,
-    autoRotate,
-    rotationSpeed,
-    zoomLevel,
-    setZoomLevel,
-  } = useCalibrationStore();
+  const calibrationParams = useCalibrationStore((state) => ({
+    showGrid: state.showGrid,
+    lineLength: state.lineLength,
+    showAnimation: state.showAnimation,
+    autoRotate: state.autoRotate,
+    rotationSpeed: state.rotationSpeed,
+    zoomLevel: state.zoomLevel,
+    setZoomLevel: state.setZoomLevel,
+  }));
 
   const [viewMode, setViewMode] = useState<"normal" | "3d">("normal");
   const [filters, setFilters] = useState({
@@ -140,6 +142,30 @@ export default function CalibrationCanvas() {
     };
   }, [toast]);
 
+  // Memoized render parameters
+  const renderParams = useMemo(
+    () => ({
+      showGrid: calibrationParams.showGrid,
+      lineLength: calibrationParams.lineLength,
+      autoRotate: calibrationParams.autoRotate,
+      rotationSpeed: calibrationParams.rotationSpeed,
+      zoomLevel: calibrationParams.zoomLevel,
+      filters,
+      viewMode,
+      celestialObjects: [],
+      calibrationStatus: "idle",
+    }),
+    [
+      calibrationParams.showGrid,
+      calibrationParams.lineLength,
+      calibrationParams.autoRotate,
+      calibrationParams.rotationSpeed,
+      calibrationParams.zoomLevel,
+      filters,
+      viewMode,
+    ]
+  );
+
   // Render loop
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -157,18 +183,10 @@ export default function CalibrationCanvas() {
         height,
         dpr,
         offset,
-        zoomLevel,
-        rotationSpeed,
-        autoRotate,
-        showGrid,
-        lineLength,
-        filters,
-        viewMode,
-        celestialObjects: [],
-        calibrationStatus: "idle",
+        ...renderParams,
       });
 
-      if (showAnimation) {
+      if (calibrationParams.showAnimation) {
         animationFrameRef.current = requestAnimationFrame(render);
       }
     };
@@ -180,18 +198,7 @@ export default function CalibrationCanvas() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [
-    showGrid,
-    lineLength,
-    showAnimation,
-    autoRotate,
-    rotationSpeed,
-    zoomLevel,
-    offset,
-    dpr,
-    filters,
-    viewMode,
-  ]);
+  }, [calibrationParams.showAnimation, offset, dpr, renderParams]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.isPrimary) {
@@ -221,14 +228,17 @@ export default function CalibrationCanvas() {
 
   const handleZoom = (direction: "in" | "out") => {
     const step = 0.1;
-    const newZoom = direction === "in" ? zoomLevel + step : zoomLevel - step;
+    const newZoom =
+      direction === "in"
+        ? calibrationParams.zoomLevel + step
+        : calibrationParams.zoomLevel - step;
     const clampedZoom = Math.min(Math.max(0.5, newZoom), 2);
-    setZoomLevel(clampedZoom);
+    calibrationParams.setZoomLevel(clampedZoom);
   };
 
   const handleReset = () => {
     setOffset({ x: 0, y: 0 });
-    setZoomLevel(1);
+    calibrationParams.setZoomLevel(1);
   };
 
   return (
@@ -268,7 +278,9 @@ export default function CalibrationCanvas() {
 
       <motion.canvas
         ref={canvasRef}
-        className={`w-full h-full bg-gray-900 border border-gray-700 shadow-inner rounded-lg ${
+        className={`w-full h-full bg-gray-900 border ${
+          isHovering ? "border-primary/50" : "border-gray-700"
+        } shadow-inner rounded-lg transition-colors ${
           isDragging ? "cursor-grabbing" : "cursor-grab"
         }`}
         initial={{ opacity: 0, scale: 0.8 }}
@@ -278,11 +290,22 @@ export default function CalibrationCanvas() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+        onFocus={() => setIsFocus(true)}
+        onBlur={() => setIsFocus(false)}
+        tabIndex={0}
+        aria-label="校准画布"
+        aria-describedby="canvas-description"
         style={{
           touchAction: "none",
           imageRendering: "crisp-edges",
+          outline: isFocus ? "2px solid rgba(59, 130, 246, 0.5)" : "none",
         }}
       />
+      <div id="canvas-description" className="sr-only">
+        用于显示和交互的校准画布，支持缩放和平移操作
+      </div>
 
       {/* 控制面板 */}
       <motion.div
@@ -343,7 +366,7 @@ export default function CalibrationCanvas() {
           </Tooltip>
 
           <Badge variant="secondary" className="bg-gray-700/50 h-6">
-            {`${(zoomLevel * 100).toFixed(0)}%`}
+            {`${(calibrationParams.zoomLevel * 100).toFixed(0)}%`}
           </Badge>
         </TooltipProvider>
       </motion.div>

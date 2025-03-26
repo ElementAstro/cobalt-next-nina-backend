@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -37,10 +39,14 @@ import {
   FileText,
   XCircle,
   CheckCircle,
-  Home,
   Settings,
   History,
   AlertTriangle,
+  Clock,
+  RefreshCcw,
+  Bug,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { z } from "zod";
@@ -48,7 +54,7 @@ import { useConnectionConfigStore } from "@/stores/connection/configStore";
 import { useUIStore } from "@/stores/connection/uiStore";
 import { useConnectionStatusStore } from "@/stores/connection/statusStore";
 import { usePortScanStore } from "@/stores/connection/portScanStore";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 
 interface ConnectionError {
   code: string;
@@ -104,10 +110,11 @@ export function ConfigurationManager({
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(isOpen);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [importStatus, setImportStatus] = useState<"idle" | "success" | "error">(
-    "idle"
-  );
+  const [importStatus, setImportStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
   const [importError, setImportError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -121,8 +128,12 @@ export function ConfigurationManager({
 
   const { toggleDarkMode, isDarkMode } = useUIStore();
 
-  const { connectionHistory, errorHistory, clearConnectionHistory, isConnected } =
-    useConnectionStatusStore();
+  const {
+    connectionHistory,
+    errorHistory,
+    clearConnectionHistory,
+    isConnected,
+  } = useConnectionStatusStore();
 
   useEffect(() => {
     loadSettings();
@@ -132,7 +143,9 @@ export function ConfigurationManager({
     setIsDialogOpen(isOpen);
   }, [isOpen]);
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setSelectedFile(file);
@@ -192,13 +205,25 @@ export function ConfigurationManager({
       reader.readAsText(file);
     });
 
-  const handleSaveSettings = () => {
-    saveSettings();
-    toast({
-      title: "设置保存成功",
-      description: "高级配置已成功保存",
-      variant: "default",
-    });
+  const handleSaveSettings = async () => {
+    try {
+      setIsSaving(true);
+      await saveSettings();
+      toast({
+        title: "设置保存成功",
+        description: "高级配置已成功保存",
+        variant: "default",
+      });
+    } catch (error) {
+      toast({
+        title: "设置保存失败",
+        description:
+          error instanceof Error ? error.message : "保存过程中发生错误",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleThemeChange = (theme: "dark" | "light") => {
@@ -221,11 +246,32 @@ export function ConfigurationManager({
       </TableRow>
     ));
 
+  const prefersReducedMotion = useReducedMotion();
+
   const fadeInUp = {
-    initial: { opacity: 0, y: 20 },
-    animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -20 },
-    transition: { duration: 0.3 },
+    initial: {
+      opacity: 0,
+      y: prefersReducedMotion ? 0 : 20,
+      scale: 0.98,
+    },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: {
+        duration: 0.4,
+        ease: [0.4, 0, 0.2, 1],
+      },
+    },
+    exit: {
+      opacity: 0,
+      y: prefersReducedMotion ? 0 : -20,
+      scale: 0.98,
+      transition: {
+        duration: 0.3,
+        ease: [0.4, 0, 1, 1],
+      },
+    },
   };
 
   return (
@@ -236,7 +282,21 @@ export function ConfigurationManager({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="w-[90vw] max-w-6xl h-[85vh] p-0 overflow-hidden bg-background border-none dark:bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <DialogContent
+        className={cn(
+          "w-[90vw] max-w-6xl h-[85vh] p-0 overflow-hidden",
+          "bg-background/95 dark:bg-gray-900/95",
+          "backdrop-blur-sm supports-[backdrop-filter]:bg-background/80",
+          "border border-border/50 rounded-lg shadow-lg",
+          "transition-all duration-200",
+          isLoading && "opacity-90 cursor-wait"
+        )}
+        aria-busy={isLoading}
+        aria-describedby="loading-status"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="config-dialog-title"
+      >
         <motion.div
           className="h-full flex flex-col"
           initial="initial"
@@ -245,10 +305,43 @@ export function ConfigurationManager({
           variants={fadeInUp}
         >
           <DialogHeader className="px-6 py-4 border-b">
-            <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
+            <DialogTitle
+              id="config-dialog-title"
+              className="flex items-center gap-2 text-xl font-semibold"
+            >
               <Settings className="w-5 h-5 text-primary" />
               配置管理器 - 天文摄影软件
             </DialogTitle>
+            <AnimatePresence>
+              {isLoading && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="mt-2"
+                  id="loading-status"
+                >
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>正在处理...</span>
+                  </div>
+                  <div className="mt-2 h-1 w-full bg-muted overflow-hidden rounded-full">
+                    <motion.div
+                      className="h-full bg-primary"
+                      animate={{
+                        width: ["0%", "100%"],
+                        transition: {
+                          duration: 1.5,
+                          repeat: Infinity,
+                          ease: "linear",
+                        },
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </DialogHeader>
 
           <Tabs defaultValue="import" className="flex-1 overflow-hidden">
@@ -269,10 +362,7 @@ export function ConfigurationManager({
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <TabsContent value="import" className="mt-0">
-                <motion.div
-                  className="space-y-4"
-                  {...fadeInUp}
-                >
+                <motion.div className="space-y-4" {...fadeInUp}>
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-lg">导入配置文件</CardTitle>
@@ -313,7 +403,9 @@ export function ConfigurationManager({
                             className="flex items-center gap-2 p-2 bg-muted rounded-md"
                           >
                             <FileText className="w-4 h-4 text-primary" />
-                            <span className="text-sm flex-1">{selectedFile.name}</span>
+                            <span className="text-sm flex-1">
+                              {selectedFile.name}
+                            </span>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -354,76 +446,238 @@ export function ConfigurationManager({
                       <CardHeader>
                         <CardTitle className="text-lg">基本设置</CardTitle>
                       </CardHeader>
-                      <CardContent className="space-y-6">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="connectionTimeout">连接超时 (秒)</Label>
-                            <Input
-                              id="connectionTimeout"
-                              type="number"
-                              value={connectionTimeout}
-                              onChange={(e) =>
-                                updateSettings({
-                                  connectionTimeout: Number(e.target.value),
-                                })
-                              }
-                              className="w-full"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="maxRetries">最大重试次数</Label>
-                            <Input
-                              id="maxRetries"
-                              type="number"
-                              value={maxRetries}
-                              onChange={(e) =>
-                                updateSettings({ maxRetries: Number(e.target.value) })
-                              }
-                              className="w-full"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="debugMode">调试模式</Label>
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                id="debugMode"
-                                checked={debugMode}
-                                onCheckedChange={(checked) =>
-                                  updateSettings({ debugMode: checked })
-                                }
-                              />
-                              <span className="text-sm text-muted-foreground">
-                                {debugMode ? "开启" : "关闭"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
+                      <CardContent>
+                        <div className="space-y-6">
+                          <AnimatePresence mode="wait">
+                            {isLoading ? (
+                              <motion.div
+                                key="loading"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="space-y-6"
+                              >
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                  {[1, 2, 3].map((i) => (
+                                    <div key={i} className="space-y-2">
+                                      <Skeleton className="h-5 w-28" />
+                                      <Skeleton className="h-9 w-full" />
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <Skeleton className="h-9 w-24" />
+                                  <Skeleton className="h-9 w-24" />
+                                </div>
+                              </motion.div>
+                            ) : (
+                              <motion.div
+                                key="content"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="space-y-6"
+                              >
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                  <motion.div
+                                    className="space-y-2"
+                                    whileTap={{ scale: 0.98 }}
+                                  >
+                                    <Label
+                                      htmlFor="connectionTimeout"
+                                      className="inline-flex items-center gap-2"
+                                    >
+                                      <Clock className="w-4 h-4 text-muted-foreground" />
+                                      连接超时 (秒)
+                                    </Label>
+                                    <div className="relative">
+                                      <Input
+                                        id="connectionTimeout"
+                                        type="number"
+                                        min={1}
+                                        max={300}
+                                        value={connectionTimeout}
+                                        onChange={(e) => {
+                                          const value = Number(e.target.value);
+                                          if (value >= 1 && value <= 300) {
+                                            updateSettings({
+                                              connectionTimeout: value,
+                                            });
+                                          }
+                                        }}
+                                        className={cn(
+                                          "w-full pr-10 font-mono",
+                                          "transition-shadow duration-200",
+                                          "focus-visible:ring-2 focus-visible:ring-primary",
+                                          connectionTimeout < 1 ||
+                                            (connectionTimeout > 300 &&
+                                              "border-red-500")
+                                        )}
+                                        aria-invalid={
+                                          connectionTimeout < 1 ||
+                                          connectionTimeout > 300
+                                        }
+                                      />
+                                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                                        秒
+                                      </span>
+                                    </div>
+                                  </motion.div>
 
-                        <div className="flex items-center justify-between">
-                          <Button
-                            onClick={handleSaveSettings}
-                            className="flex items-center gap-2"
-                          >
-                            <Save className="w-4 h-4" />
-                            保存设置
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="outline" className="flex items-center gap-2">
-                                <Home className="w-4 h-4" />
-                                主题设置
+                                  <motion.div
+                                    className="space-y-2"
+                                    whileTap={{ scale: 0.98 }}
+                                  >
+                                    <Label
+                                      htmlFor="maxRetries"
+                                      className="inline-flex items-center gap-2"
+                                    >
+                                      <RefreshCcw className="w-4 h-4 text-muted-foreground" />
+                                      最大重试次数
+                                    </Label>
+                                    <div className="relative">
+                                      <Input
+                                        id="maxRetries"
+                                        type="number"
+                                        min={1}
+                                        max={10}
+                                        value={maxRetries}
+                                        onChange={(e) => {
+                                          const value = Number(e.target.value);
+                                          if (value >= 1 && value <= 10) {
+                                            updateSettings({
+                                              maxRetries: value,
+                                            });
+                                          }
+                                        }}
+                                        className={cn(
+                                          "w-full pr-10 font-mono",
+                                          "transition-shadow duration-200",
+                                          "focus-visible:ring-2 focus-visible:ring-primary",
+                                          maxRetries < 1 ||
+                                            (maxRetries > 10 &&
+                                              "border-red-500")
+                                        )}
+                                        aria-invalid={
+                                          maxRetries < 1 || maxRetries > 10
+                                        }
+                                      />
+                                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                                        次
+                                      </span>
+                                    </div>
+                                  </motion.div>
+
+                                  <motion.div
+                                    className="space-y-2"
+                                    whileTap={{ scale: 0.98 }}
+                                  >
+                                    <Label
+                                      htmlFor="debugMode"
+                                      className="inline-flex items-center gap-2"
+                                    >
+                                      <Bug className="w-4 h-4 text-muted-foreground" />
+                                      调试模式
+                                    </Label>
+                                    <div className="flex items-center gap-2 h-9 px-3 rounded-md border bg-transparent">
+                                      <Switch
+                                        id="debugMode"
+                                        checked={debugMode}
+                                        onCheckedChange={(checked) =>
+                                          updateSettings({ debugMode: checked })
+                                        }
+                                        className="data-[state=checked]:bg-primary"
+                                      />
+                                      <motion.span
+                                        className="text-sm text-muted-foreground"
+                                        animate={{
+                                          opacity: [0.5, 1],
+                                          scale: [0.95, 1],
+                                        }}
+                                        transition={{ duration: 0.2 }}
+                                      >
+                                        {debugMode ? "开启" : "关闭"}
+                                      </motion.span>
+                                    </div>
+                                  </motion.div>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+
+                          <div className="flex items-center justify-between">
+                            <motion.div
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                            >
+                              <Button
+                                onClick={handleSaveSettings}
+                                className={cn(
+                                  "flex items-center gap-2",
+                                  "transition-all duration-200",
+                                  "hover:shadow-md",
+                                  "active:scale-95",
+                                  isSaving && "opacity-70 cursor-wait"
+                                )}
+                                disabled={isSaving}
+                              >
+                                {isSaving ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Save className="w-4 h-4" />
+                                )}
+                                {isSaving ? "保存中..." : "保存设置"}
                               </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-40">
-                              <DropdownMenuLabel>选择主题</DropdownMenuLabel>
-                              <DropdownMenuItem onClick={() => handleThemeChange("light")}>
-                                浅色模式
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleThemeChange("dark")}>
-                                深色模式
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            </motion.div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <motion.div
+                                  whileHover={{ scale: 1.02 }}
+                                  whileTap={{ scale: 0.98 }}
+                                >
+                                  <Button
+                                    variant="outline"
+                                    className={cn(
+                                      "flex items-center gap-2",
+                                      "transition-all duration-200",
+                                      "hover:shadow-md",
+                                      "active:scale-95",
+                                      "border-primary/20",
+                                      "hover:border-primary/50"
+                                    )}
+                                  >
+                                    <Sun className="w-4 h-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                                    <Moon className="absolute w-4 h-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                                    <span>主题设置</span>
+                                  </Button>
+                                </motion.div>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className={cn(
+                                  "w-40",
+                                  "animate-in fade-in-80",
+                                  "bg-background/95 backdrop-blur-sm"
+                                )}
+                              >
+                                <DropdownMenuLabel>选择主题</DropdownMenuLabel>
+                                <DropdownMenuItem
+                                  onClick={() => handleThemeChange("light")}
+                                  className="flex items-center gap-2 cursor-pointer"
+                                >
+                                  <Sun className="w-4 h-4" />
+                                  浅色模式
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleThemeChange("dark")}
+                                  className="flex items-center gap-2 cursor-pointer"
+                                >
+                                  <Moon className="w-4 h-4" />
+                                  深色模式
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -456,7 +710,9 @@ export function ConfigurationManager({
                             </TableBody>
                           </Table>
                         ) : (
-                          <p className="text-sm text-muted-foreground">暂无扫描记录</p>
+                          <p className="text-sm text-muted-foreground">
+                            暂无扫描记录
+                          </p>
                         )}
                       </CardContent>
                     </Card>

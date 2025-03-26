@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, memo, useCallback } from "react";
+import { useState, memo, useCallback, useMemo } from "react";
+import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Pin,
   Trash2,
   Edit2,
   Heart,
-  ImageIcon,
   Code,
   Settings,
   Wrench,
@@ -16,8 +17,6 @@ import {
   Zap,
   Loader2,
 } from "lucide-react";
-import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -34,8 +33,8 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 
 // 动画变体配置
 const animationVariants = {
@@ -72,19 +71,6 @@ const animationVariants = {
       },
     },
   },
-  container: {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 20,
-        staggerChildren: 0.1,
-      },
-    },
-  },
   button: {
     hover: {
       scale: 1.05,
@@ -96,24 +82,6 @@ const animationVariants = {
     },
     tap: {
       scale: 0.95,
-    },
-  },
-  menu: {
-    enter: {
-      opacity: 1,
-      scale: 1,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 20,
-      },
-    },
-    exit: {
-      opacity: 0,
-      scale: 0.95,
-      transition: {
-        duration: 0.2,
-      },
     },
   },
 };
@@ -154,6 +122,121 @@ interface AppIconProps {
   };
 }
 
+// 抽出编辑状态组件
+const EditableInput = memo(({
+  name,
+  editedName,
+  onSave,
+  onChange,
+  onCancel,
+}: {
+  name: string;
+  editedName: string;
+  onSave: () => void;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+}) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      onSave();
+    } else if (e.key === "Escape") {
+      onCancel();
+    }
+  };
+
+  return (
+    <Input
+      value={editedName}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onSave}
+      onKeyDown={handleKeyDown}
+      autoFocus
+      className={cn(
+        "text-sm text-center w-full",
+        "focus:ring-2 focus:ring-primary",
+        "transition-all duration-300",
+        "bg-background/60 backdrop-blur-sm"
+      )}
+      aria-label={`编辑 ${name}`}
+    />
+  );
+});
+
+EditableInput.displayName = "EditableInput";
+
+// 抽出图标组件
+const AppIconImage = memo(({
+  icon,
+  name,
+  isLoading,
+  onLoad,
+  onError,
+  category,
+  isPinned,
+}: {
+  icon: string;
+  name: string;
+  isLoading: boolean;
+  onLoad: () => void;
+  onError: () => void;
+  category: string;
+  isPinned: boolean;
+}) => {
+  const getCategoryIcon = () => {
+    switch (category) {
+      case "development":
+        return <Code className="h-3.5 w-3.5 text-purple-500" />;
+      case "system":
+        return <Settings className="h-3.5 w-3.5 text-green-500" />;
+      case "tools":
+        return <Wrench className="h-3.5 w-3.5 text-yellow-500" />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <motion.div variants={animationVariants.icon} className="relative">
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+        </div>
+      )}
+      <div className="relative w-full h-full group-hover:scale-105 transition-transform">
+        <Image
+          src={icon}
+          alt={name}
+          fill
+          className="object-contain rounded-md"
+          onLoadingComplete={onLoad}
+          onError={onError}
+          loading="lazy"
+          sizes="(max-width: 768px) 64px, 96px"
+        />
+        <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-background shadow-sm">
+          {getCategoryIcon()}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {isPinned && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0 }}
+            className="absolute -top-1 -right-1"
+          >
+            <Pin className="h-3.5 w-3.5 text-primary" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+});
+
+AppIconImage.displayName = "AppIconImage";
+
+// 主组件
 export const AppIcon = memo(({
   id,
   name,
@@ -185,41 +268,51 @@ export const AppIcon = memo(({
 
   const handleEdit = useCallback(() => {
     setIsEditing(true);
-  }, []);
+    setEditedName(name);
+  }, [name]);
 
   const handleSave = useCallback(() => {
-    if (editedName.trim() !== "") {
-      onEdit(editedName);
-      setIsEditing(false);
+    if (editedName.trim() !== name) {
+      onEdit(editedName.trim());
     }
-  }, [editedName, onEdit]);
+    setIsEditing(false);
+  }, [editedName, name, onEdit]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    switch (e.key) {
-      case "Enter":
-        handleSave();
-        break;
-      case "Escape":
-        setIsEditing(false);
-        setEditedName(name);
-        break;
-    }
-  }, [handleSave, name]);
+  const handleCancel = useCallback(() => {
+    setIsEditing(false);
+    setEditedName(name);
+  }, [name]);
 
-  const getCategoryIcon = () => {
-    switch (category) {
-      case "development":
-        return <Code className="h-3.5 w-3.5 text-purple-500" />;
-      case "media":
-        return <ImageIcon className="h-3.5 w-3.5 text-pink-500" />;
-      case "system":
-        return <Settings className="h-3.5 w-3.5 text-green-500" />;
-      case "tools":
-        return <Wrench className="h-3.5 w-3.5 text-yellow-500" />;
-      default:
-        return null;
-    }
-  };
+  // 使用 useMemo 缓存统计信息
+  const statsDisplay = useMemo(() => {
+    if (!showStats || !stats) return null;
+    return (
+      <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+        <Badge 
+          variant="secondary" 
+          className={cn(
+            "h-5 px-1.5",
+            "bg-primary/10 hover:bg-primary/20",
+            "transition-colors duration-300"
+          )}
+        >
+          <Zap className="mr-1 h-3 w-3" />
+          {stats.usageCount}
+        </Badge>
+        <span className="hidden sm:inline">
+          最后使用: {stats.lastUsed.toLocaleDateString()}
+        </span>
+      </div>
+    );
+  }, [showStats, stats]);
+
+  const app: App = useMemo(() => ({
+    id,
+    name,
+    icon,
+    isPinned,
+    category,
+  }), [id, name, icon, isPinned, category]);
 
   return (
     <TooltipProvider>
@@ -240,8 +333,8 @@ export const AppIcon = memo(({
                   "shadow-lg hover:shadow-xl",
                   isCompact ? "p-1.5" : "p-2",
                   view === "list" && "max-w-md",
-                  isSelected && "ring-2 ring-primary ring-offset-2 dark:ring-offset-background",
-                  "rounded-xl hover:bg-accent/5 dark:hover:bg-accent/10"
+                  isSelected && "ring-2 ring-primary ring-offset-2",
+                  "rounded-xl hover:bg-accent/5"
                 )}
                 style={{
                   width: view === "list" ? "100%" : size,
@@ -254,10 +347,11 @@ export const AppIcon = memo(({
                 aria-label={`${name} 应用图标`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    onLaunch({ id, name, icon, isPinned, category });
+                    onLaunch(app);
                   }
                 }}
               >
+                {/* 选择模式复选框 */}
                 {isSelectionMode && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
@@ -272,6 +366,7 @@ export const AppIcon = memo(({
                   </motion.div>
                 )}
                 
+                {/* 收藏按钮 */}
                 <AnimatePresence>
                   {isHovered && (
                     <motion.div
@@ -319,67 +414,30 @@ export const AppIcon = memo(({
                   variant="ghost"
                   className={cn(
                     "w-full h-auto flex items-center gap-2 p-2 rounded-lg",
-                    "hover:bg-accent/5 dark:hover:bg-accent/10",
+                    "hover:bg-accent/5",
                     "transition-all duration-300",
                     view === "grid" ? "flex-col" : "flex-row justify-start",
                     className
                   )}
-                  onClick={() => onLaunch({ id, name, icon, isPinned, category })}
+                  onClick={() => onLaunch(app)}
                 >
-                  <motion.div
-                    variants={animationVariants.icon}
-                    className={cn(
-                      "relative",
-                      view === "grid" ? "w-12 h-12" : "w-8 h-8"
-                    )}
-                  >
-                    {isLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      </div>
-                    )}
-                    <div className="relative w-full h-full group-hover:scale-105 transition-transform">
-                      <Image
-                        src={icon}
-                        alt={name}
-                        fill
-                        className="object-contain rounded-md"
-                        onLoad={() => setIsLoading(false)}
-                        onError={() => setIsLoading(false)}
-                        loading="lazy"
-                      />
-                      <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-background shadow-sm">
-                        {getCategoryIcon()}
-                      </div>
-                    </div>
-
-                    <AnimatePresence>
-                      {isPinned && (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0 }}
-                          className="absolute -top-1 -right-1"
-                        >
-                          <Pin className="h-3.5 w-3.5 text-primary" />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
+                  <AppIconImage
+                    icon={icon}
+                    name={name}
+                    isLoading={isLoading}
+                    onLoad={() => setIsLoading(false)}
+                    onError={() => setIsLoading(false)}
+                    category={category}
+                    isPinned={isPinned}
+                  />
 
                   {isEditing ? (
-                    <Input
-                      value={editedName}
-                      onChange={(e) => setEditedName(e.target.value)}
-                      onBlur={handleSave}
-                      onKeyDown={handleKeyDown}
-                      autoFocus
-                      className={cn(
-                        "text-sm text-center w-full",
-                        "focus:ring-2 focus:ring-primary",
-                        "transition-all duration-300",
-                        "bg-background/60 backdrop-blur-sm"
-                      )}
+                    <EditableInput
+                      name={name}
+                      editedName={editedName}
+                      onSave={handleSave}
+                      onChange={setEditedName}
+                      onCancel={handleCancel}
                     />
                   ) : (
                     <span
@@ -395,24 +453,7 @@ export const AppIcon = memo(({
                     </span>
                   )}
 
-                  {showStats && stats && view === "list" && (
-                    <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                      <Badge 
-                        variant="secondary" 
-                        className={cn(
-                          "h-5 px-1.5",
-                          "bg-primary/10 hover:bg-primary/20",
-                          "transition-colors duration-300"
-                        )}
-                      >
-                        <Zap className="mr-1 h-3 w-3" />
-                        {stats.usageCount}
-                      </Badge>
-                      <span className="hidden sm:inline">
-                        最后使用: {stats.lastUsed.toLocaleDateString()}
-                      </span>
-                    </div>
-                  )}
+                  {statsDisplay}
                 </Button>
               </motion.div>
             </TooltipTrigger>
@@ -435,7 +476,7 @@ export const AppIcon = memo(({
         >
           <ContextMenuItem
             className="flex items-center"
-            onClick={() => onLaunch({ id, name, icon, isPinned, category })}
+            onClick={() => onLaunch(app)}
           >
             <Zap className="mr-2 h-4 w-4" />
             <span>打开</span>
@@ -462,22 +503,6 @@ export const AppIcon = memo(({
               <span>{isFavorite ? "取消收藏" : "添加收藏"}</span>
             </ContextMenuItem>
           )}
-
-          {showStats && stats && (
-            <ContextMenuItem className="flex items-center cursor-default">
-              <Settings className="mr-2 h-4 w-4" />
-              <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">
-                  使用次数: {stats.usageCount}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  最后使用: {stats.lastUsed.toLocaleDateString()}
-                </span>
-              </div>
-            </ContextMenuItem>
-          )}
-
-          {(onShare || onAddToWorkspace) && <ContextMenuSeparator />}
 
           {onShare && (
             <ContextMenuItem className="flex items-center" onClick={onShare}>

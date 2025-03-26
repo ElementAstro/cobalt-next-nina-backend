@@ -12,13 +12,11 @@ import React, {
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
-  ChevronDown as ChevronDownIcon,
-  RefreshCw as RefreshCwIcon,
-  Bug as BugPlayIcon,
-  Loader as LoaderIcon,
-  X as XIcon
+  // 移除未使用的图标导入
 } from "lucide-react";
 import BlueScreen404 from "./blue-screen-404";
+// 导入共享错误组件
+import { ErrorHeader, ErrorDetails, ErrorActions } from "./error-shared";
 
 interface ErrorBoundaryContextType {
   error: Error | null;
@@ -57,7 +55,6 @@ interface State {
   isReporting: boolean;
   retryCount: number;
   errorTime?: Date;
-  showStack: boolean;
 }
 
 class ErrorBoundary extends Component<Props, State> {
@@ -67,7 +64,6 @@ class ErrorBoundary extends Component<Props, State> {
       hasError: false,
       isReporting: false,
       retryCount: 0,
-      showStack: false
     };
   }
 
@@ -76,7 +72,6 @@ class ErrorBoundary extends Component<Props, State> {
       hasError: true,
       error,
       errorTime: new Date(),
-      showStack: false
     };
   }
 
@@ -102,7 +97,6 @@ class ErrorBoundary extends Component<Props, State> {
           error: undefined,
           errorInfo: undefined,
           retryCount: 0,
-          showStack: false,
         });
       }
     }
@@ -130,7 +124,6 @@ class ErrorBoundary extends Component<Props, State> {
         error: undefined,
         errorInfo: undefined,
         retryCount: prevState.retryCount + 1,
-        showStack: false,
       }));
     } else {
       alert(this.getTranslation("maxRetriesReached"));
@@ -143,7 +136,6 @@ class ErrorBoundary extends Component<Props, State> {
       error: undefined,
       errorInfo: undefined,
       retryCount: 0,
-      showStack: false,
     });
   };
 
@@ -179,7 +171,7 @@ class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     const { children, useBlueScreen = true } = this.props;
-    const { hasError, error, errorInfo } = this.state;
+    const { hasError, error, errorInfo, isReporting, retryCount } = this.state;
 
     if (hasError) {
       if (useBlueScreen) {
@@ -193,8 +185,6 @@ class ErrorBoundary extends Component<Props, State> {
       }
 
       const { theme = "dark" } = this.props;
-      const bgColor = theme === "light" ? "bg-white" : "bg-gray-800";
-      const textColor = theme === "light" ? "text-gray-800" : "text-gray-200";
 
       const errorModal = (
         <motion.div
@@ -204,78 +194,40 @@ class ErrorBoundary extends Component<Props, State> {
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50"
         >
           <motion.div
-            className={`error-boundary w-full max-w-md p-8 rounded-xl shadow-2xl backdrop-blur-sm ring-1 ring-white/10 ${bgColor} ${textColor} ${
-              this.props.customClassName || ""
-            }`}
+            className={`error-boundary w-full max-w-md p-8 rounded-xl shadow-2xl backdrop-blur-sm ring-1 ring-white/10 ${
+              theme === "light" ? "bg-white" : "bg-gray-800"
+            } ${this.props.customClassName || ""}`}
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: -20 }}
             transition={{
               type: "spring",
               stiffness: 300,
-              damping: 25
+              damping: 25,
             }}
           >
-            <div className="space-y-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6 text-red-500" />
-                </div>
-                <h1 className="text-2xl font-semibold tracking-tight">
-                  {this.getTranslation("errorOccurred")}
-                </h1>
-              </div>
-              <div className="space-y-2">
-                <p className="text-base/relaxed font-medium text-red-500/90">
-                  {this.state.error?.message}
-                </p>
-                {this.state.errorTime && (
-                  <p className="text-sm/relaxed text-white/60">
-                    {this.getTranslation("errorTime")}{" "}
-                    <time dateTime={this.state.errorTime.toISOString()}>
-                      {this.state.errorTime.toLocaleString()}
-                    </time>
-                  </p>
-                )}
-              </div>
-            </div>
+            <ErrorHeader
+              title={this.getTranslation("errorOccurred")}
+              errorMessage={this.state.error?.message}
+              theme={theme}
+              icon={<AlertTriangle className="w-6 h-6 text-red-500" />}
+            />
+
             {this.props.showErrorDetails && (
-              <div className="mt-6 space-y-3">
-                <button
-                  onClick={() => this.setState({ showStack: !this.state.showStack })}
-                  className="flex items-center space-x-2 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  <span>{this.getTranslation("errorDetails")}</span>
-                  <motion.div
-                    animate={{ rotate: this.state.showStack ? 180 : 0 }}
-                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                  >
-                    <ChevronDownIcon className="w-4 h-4" />
-                  </motion.div>
-                </button>
-                <AnimatePresence>
-                  {this.state.showStack && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ type: "spring", stiffness: 200, damping: 20 }}
-                    >
-                      <pre
-                        className={`p-4 rounded-lg font-mono text-sm overflow-x-auto ${
-                          theme === "light"
-                            ? "bg-gray-100/80 text-gray-800"
-                            : "bg-gray-800/80 text-gray-200"
-                        }`}
-                      >
-                        {this.state.errorInfo?.componentStack}
-                      </pre>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              <ErrorDetails
+                errorInfo={this.state.errorInfo?.componentStack?.toString()}
+                theme={theme}
+                onCopy={() => {
+                  if (this.state.errorInfo?.componentStack) {
+                    navigator.clipboard.writeText(
+                      this.state.errorInfo.componentStack
+                    );
+                    alert("错误信息已复制到剪贴板");
+                  }
+                }}
+              />
             )}
-            
+
             {this.props.getSuggestion && this.state.error && (
               <div className="mt-6">
                 <p className="text-sm font-medium text-blue-400">
@@ -283,70 +235,18 @@ class ErrorBoundary extends Component<Props, State> {
                 </p>
               </div>
             )}
-            
-            <div className="mt-8 flex flex-wrap gap-3">
-              <motion.button
-                className={`
-                  inline-flex items-center justify-center rounded-lg px-4 py-2
-                  bg-blue-500/90 hover:bg-blue-500 text-white font-medium
-                  shadow-lg shadow-blue-500/20
-                  transition-all duration-200
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
-                  disabled:opacity-50 disabled:pointer-events-none
-                `}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={this.handleRetry}
-              >
-                <RefreshCwIcon className="w-4 h-4 mr-2" />
-                {this.getTranslation("retry")} ({this.state.retryCount}/{this.props.maxRetries || 3})
-              </motion.button>
-              
-              {this.props.reportError && (
-                <motion.button
-                  className={`
-                    inline-flex items-center justify-center rounded-lg px-4 py-2
-                    bg-emerald-500/90 hover:bg-emerald-500 text-white font-medium
-                    shadow-lg shadow-emerald-500/20
-                    transition-all duration-200
-                    focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2
-                    disabled:opacity-50 disabled:pointer-events-none
-                  `}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={this.handleReportError}
-                  disabled={this.state.isReporting}
-                >
-                  <BugPlayIcon className="w-4 h-4 mr-2" />
-                  {this.state.isReporting ? (
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    >
-                      <LoaderIcon className="w-4 h-4" />
-                    </motion.div>
-                  ) : (
-                    this.getTranslation("reportError")
-                  )}
-                </motion.button>
-              )}
-              
-              <motion.button
-                className={`
-                  inline-flex items-center justify-center rounded-lg px-4 py-2
-                  bg-gray-500/90 hover:bg-gray-500 text-white font-medium
-                  shadow-lg shadow-gray-500/20
-                  transition-all duration-200
-                  focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2
-                `}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={this.handleClose}
-              >
-                <XIcon className="w-4 h-4 mr-2" />
-                {this.getTranslation("close")}
-              </motion.button>
-            </div>
+
+            <ErrorActions
+              onRetry={this.handleRetry}
+              onReport={
+                this.props.reportError ? this.handleReportError : undefined
+              }
+              onClose={this.handleClose}
+              retryCount={retryCount}
+              maxRetries={this.props.maxRetries}
+              isReporting={isReporting}
+              theme={theme}
+            />
           </motion.div>
         </motion.div>
       );

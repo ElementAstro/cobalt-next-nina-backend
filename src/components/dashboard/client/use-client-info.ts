@@ -1,13 +1,30 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { UAParser } from "ua-parser-js";
 import { ClientInfo, ExtendedPerformance, NetworkInformation } from "./types";
 
-export function useClientInfo() {
+export function useClientInfo(): {
+  clientInfo: ClientInfo | null;
+  isLoading: boolean;
+  error: string | null;
+} {
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     const parser = new UAParser();
     const result = parser.getResult();
+
+    const handleError = (err: Error, context: string) => {
+      if (isMountedRef.current) {
+        setError(`获取${context}失败: ${err.message}`);
+        console.error(`[ClientInfo] ${context}错误:`, err);
+      }
+    };
+
+    setIsLoading(true);
+    setError(null);
 
     const getPerformanceLoadTime = (): string => {
       const [navigation] = performance.getEntriesByType(
@@ -65,95 +82,119 @@ export function useClientInfo() {
     };
 
     const getClientInfo = async () => {
-      const info: ClientInfo = {
-        browser: `${result.browser.name} ${result.browser.version}`,
-        os: `${result.os.name} ${result.os.version}`,
-        device: result.device.type || "Desktop",
-        screen: `${window.screen.width}x${window.screen.height}`,
-        language: navigator.language,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        cookiesEnabled: navigator.cookieEnabled,
-        doNotTrack:
-          navigator.doNotTrack === "1"
-            ? true
-            : navigator.doNotTrack === "0"
-            ? false
-            : null,
-        online: navigator.onLine,
-        performance: {
-          memory: getMemoryInfo(),
-          loadTime: getPerformanceLoadTime(),
-        },
-        webGL: getWebGLInfo(),
-        storage: {
-          localStorageSize: localStorage.length,
-          sessionStorageSize: sessionStorage.length,
-        },
-        network: {
-          type: "未知",
-          downlinkMax: 0,
-        },
-        cpu: {
-          cores: navigator.hardwareConcurrency || 1,
-        },
-        mediaDevices: {
-          audioinput: 0,
-          audiooutput: 0,
-        },
-        fonts: getFonts(),
-      };
-
-      if (
-        "connection" in navigator &&
-        (navigator.connection as NetworkInformation)
-      ) {
-        const connection = navigator.connection as NetworkInformation;
-        info.connection = {
-          effectiveType: connection.effectiveType || "未知",
-          downlink: connection.downlink || 0,
-          rtt: connection.rtt || 0,
+      try {
+        const info: ClientInfo = {
+          browser: `${result.browser.name} ${result.browser.version}`,
+          os: `${result.os.name} ${result.os.version}`,
+          device: result.device.type || "Desktop",
+          screen: `${window.screen.width}x${window.screen.height}`,
+          language: navigator.language,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          cookiesEnabled: navigator.cookieEnabled,
+          doNotTrack:
+            navigator.doNotTrack === "1"
+              ? true
+              : navigator.doNotTrack === "0"
+              ? false
+              : null,
+          online: navigator.onLine,
+          performance: {
+            memory: getMemoryInfo(),
+            loadTime: getPerformanceLoadTime(),
+          },
+          webGL: getWebGLInfo(),
+          storage: {
+            localStorageSize: localStorage.length,
+            sessionStorageSize: sessionStorage.length,
+          },
+          network: {
+            type: "未知",
+            downlinkMax: 0,
+          },
+          cpu: {
+            cores: navigator.hardwareConcurrency || 1,
+          },
+          mediaDevices: {
+            audioinput: 0,
+            audiooutput: 0,
+          },
+          fonts: getFonts(),
         };
-        info.network = {
-          type: connection.effectiveType || "未知",
-          downlinkMax: connection.downlinkMax || 0,
-        };
-      }
 
-      if ("geolocation" in navigator) {
-        try {
-          const position = await new Promise<GeolocationPosition>(
-            (resolve, reject) =>
-              navigator.geolocation.getCurrentPosition(resolve, reject)
-          );
-          info.geolocation = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
+        if (
+          "connection" in navigator &&
+          (navigator.connection as NetworkInformation)
+        ) {
+          const connection = navigator.connection as NetworkInformation;
+          info.connection = {
+            effectiveType: connection.effectiveType || "未知",
+            downlink: connection.downlink || 0,
+            rtt: connection.rtt || 0,
           };
-        } catch (error) {
-          console.error("地理位置错误:", error);
+          info.network = {
+            type: connection.effectiveType || "未知",
+            downlinkMax: connection.downlinkMax || 0,
+          };
+        }
+
+        if ("geolocation" in navigator) {
+          try {
+            const position = await new Promise<GeolocationPosition>(
+              (resolve, reject) =>
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                  timeout: 5000,
+                  maximumAge: 60000,
+                })
+            );
+            if (isMountedRef.current) {
+              info.geolocation = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+              };
+            }
+          } catch (error) {
+            handleError(error as Error, "地理位置");
+          }
+        }
+
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            if (isMountedRef.current) {
+              info.mediaDevices = {
+                audioinput: devices.filter(
+                  (device) => device.kind === "audioinput"
+                ).length,
+                audiooutput: devices.filter(
+                  (device) => device.kind === "audiooutput"
+                ).length,
+              };
+            }
+          } catch (error) {
+            handleError(error as Error, "媒体设备");
+          }
+        }
+
+        if (isMountedRef.current) {
+          setClientInfo(info);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        if (isMountedRef.current) {
+          setError(`获取客户端信息失败: ${(err as Error).message}`);
+          setIsLoading(false);
         }
       }
-
-      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        try {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          info.mediaDevices = {
-            audioinput: devices.filter((device) => device.kind === "audioinput")
-              .length,
-            audiooutput: devices.filter(
-              (device) => device.kind === "audiooutput"
-            ).length,
-          };
-        } catch (error) {
-          console.error("媒体设备错误:", error);
-        }
-      }
-
-      setClientInfo(info);
     };
 
     getClientInfo();
+
+    return () => {
+      // 清理函数正确设置 ref 的 current 属性
+      isMountedRef.current = false;
+    };
   }, []);
 
-  return clientInfo;
+  // 返回所有状态值，让调用者可以使用
+  return { clientInfo, isLoading, error };
 }

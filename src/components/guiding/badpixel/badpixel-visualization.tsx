@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ScatterChart,
   Scatter,
@@ -18,6 +18,10 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMediaQuery } from "react-responsive";
 import { cn } from "@/lib/utils";
+import debounce from "lodash/debounce";
+
+// 防抖时间配置
+const DEBOUNCE_DELAY = 16; // ~1 frame @ 60fps
 import { BadPixelData, VisualMode } from "@/types/guiding/badpixel";
 
 const COLORS = {
@@ -30,15 +34,62 @@ interface BadPixelVisualizationProps {
   visualMode: VisualMode;
 }
 
-const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps) => {
+const BadPixelVisualization = memo(({ data, visualMode }: BadPixelVisualizationProps) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const containerRef = useRef<HTMLDivElement>(null);
+  interface TouchPoint {
+    x: number;
+    y: number;
+  }
+  
+  interface Transform {
+    x: number;
+    y: number;
+    scale: number;
+    lastTouch: TouchPoint | null;
+  }
+
+  const [transform, setTransform] = useState<Transform>({
+    x: 0,
+    y: 0,
+    scale: 1,
+    lastTouch: null
+  });
   const [isLoading, setIsLoading] = useState(true);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const transformRef = useRef(transform);
+
+  // 创建防抖的transform更新函数
+  const debouncedSetTransform = useCallback(
+    debounce((newTransform: typeof transform) => {
+      setTransform(newTransform);
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  // 清理防抖函数
+  useEffect(() => {
+    return () => {
+      debouncedSetTransform.cancel();
+    };
+  }, [debouncedSetTransform]);
   
   // 响应式查询
   const isMobile = useMediaQuery({ query: "(max-width: 768px)" });
   const isPortrait = useMediaQuery({ query: "(orientation: portrait)" });
+  
+  // 性能优化：监听响应式变化
+  useEffect(() => {
+    if (containerRef.current) {
+      // 在响应式布局变化时重置变换状态
+      setTransform({ x: 0, y: 0, scale: 1, lastTouch: null });
+    }
+  }, [isMobile, isPortrait]);
+
+  // 性能优化：使用 useEffect 更新 ref
+  useEffect(() => {
+    transformRef.current = transform;
+  }, [transform]);
 
   // 计算散点图数据
   const scatterData = useMemo(() => {
@@ -66,30 +117,98 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
   // 手势控制
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const newScale = transform.scale * (e.deltaY > 0 ? 0.9 : 1.1);
-    setTransform((prev) => ({
-      ...prev,
-      scale: Math.min(Math.max(newScale, 0.1), 5),
-    }));
-  }, [transform.scale]);
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const currentTransform = transformRef.current;
+    const newScale = currentTransform.scale * delta;
+    
+    // 计算缩放中心点
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    // 限制缩放范围并计算新的变换
+    const scale = Math.min(Math.max(newScale, 0.5), 3);
+    const x = mouseX - (mouseX - currentTransform.x) * (scale / currentTransform.scale);
+    const y = mouseY - (mouseY - currentTransform.y) * (scale / currentTransform.scale);
+    
+    const newTransform: Transform = {
+      x,
+      y,
+      scale,
+      lastTouch: transformRef.current.lastTouch
+    };
+    transformRef.current = newTransform;
+    debouncedSetTransform(newTransform);
+  }, [debouncedSetTransform]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
+    // 添加键盘事件监听
+    document.addEventListener('keydown', handleKeyDown);
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging) return;
-    setTransform((prev) => ({
-      ...prev,
-      x: prev.x + e.movementX,
-      y: prev.y + e.movementY,
-    }));
-  }, [isDragging]);
+    if (!isDragging || !containerRef.current) return;
+    
+    const { clientWidth, clientHeight } = containerRef.current;
+    const currentTransform = transformRef.current;
+    
+    // 计算最大允许偏移量
+    const maxOffsetX = Math.max(0, clientWidth * (currentTransform.scale - 1) / 2);
+    const maxOffsetY = Math.max(0, clientHeight * (currentTransform.scale - 1) / 2);
+    
+    // 计算新位置，确保在边界内
+    const newX = currentTransform.x + e.movementX;
+    const newY = currentTransform.y + e.movementY;
+    
+    const x = maxOffsetX > 0
+      ? Math.min(Math.max(newX, -maxOffsetX), maxOffsetX)
+      : 0;
+    const y = maxOffsetY > 0
+      ? Math.min(Math.max(newY, -maxOffsetY), maxOffsetY)
+      : 0;
+    
+    const newTransform = { ...currentTransform, x, y };
+    transformRef.current = newTransform; // 立即更新ref
+    debouncedSetTransform(newTransform); // 防抖更新state
+  }, [isDragging, debouncedSetTransform]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    document.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!containerRef.current) return;
+    
+    const step = 20;
+    const { clientWidth, clientHeight } = containerRef.current;
+    const maxX = clientWidth * (transform.scale - 1) / 2;
+    const maxY = clientHeight * (transform.scale - 1) / 2;
+    
+    setTransform((prev) => {
+      let x = prev.x;
+      let y = prev.y;
+      
+      switch(e.key) {
+        case 'ArrowLeft': x = Math.max(prev.x - step, -maxX); break;
+        case 'ArrowRight': x = Math.min(prev.x + step, maxX); break;
+        case 'ArrowUp': y = Math.max(prev.y - step, -maxY); break;
+        case 'ArrowDown': y = Math.min(prev.y + step, maxY); break;
+        case '+':
+        case '=':
+          return { ...prev, scale: Math.min(prev.scale * 1.1, 3), lastTouch: prev.lastTouch };
+        case '-':
+          return { ...prev, scale: Math.max(prev.scale * 0.9, 0.5), lastTouch: prev.lastTouch };
+        case '0':
+          return { x: 0, y: 0, scale: 1, lastTouch: null };
+        default: return prev;
+      }
+      
+      return { ...prev, x, y, lastTouch: prev.lastTouch };
+    });
+  }, [transform.scale]);
 
   // 计算缩略图视口位置
   const getViewportStyle = useCallback(() => {
@@ -111,7 +230,12 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
   // 渲染前的检查
   if (!data.width || !data.height) {
     return (
-      <div className="w-full h-[400px] flex items-center justify-center">
+      <div
+        className="w-full h-[400px] flex items-center justify-center"
+        role="alert"
+        aria-busy="true"
+        aria-live="polite"
+      >
         <Skeleton className="w-full h-full" />
       </div>
     );
@@ -120,11 +244,90 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
   // 渲染加载状态
   if (isLoading) {
     return (
-      <div className="w-full h-full flex items-center justify-center">
-        <div className="animate-pulse flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-gray-700" />
-          <div className="h-2 w-24 bg-gray-700 rounded" />
-        </div>
+      <div
+        className="w-full h-full flex flex-col items-center justify-center gap-4"
+        role="status"
+        aria-label="加载中"
+        aria-busy="true"
+      >
+        {/* 骨架屏加载动画 */}
+        <motion.div
+          className="flex flex-col items-center gap-4 w-full max-w-md px-4"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          {/* 主加载指示器 */}
+          <motion.div
+            className="relative w-16 h-16"
+            animate={{
+              rotate: 360,
+            }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+              ease: "linear"
+            }}
+          >
+            <motion.div
+              className="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full"
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.8, 1, 0.8]
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            />
+          </motion.div>
+
+          {/* 进度文本 */}
+          <motion.div
+            className="text-center space-y-2"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+          >
+            <p className="text-sm text-gray-400">正在加载坏点数据</p>
+            <div className="w-full bg-gray-800 rounded-full h-2">
+              <motion.div
+                className="bg-blue-500 h-2 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: ["0%", "30%", "70%", "90%"] }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                  repeatType: "reverse"
+                }}
+              />
+            </div>
+          </motion.div>
+
+          {/* 骨架屏网格预览 */}
+          <motion.div
+            className="grid grid-cols-5 gap-2 w-full mt-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.3 }}
+            transition={{ delay: 0.4 }}
+          >
+            {Array.from({ length: 10 }).map((_, i) => (
+              <motion.div
+                key={i}
+                className="aspect-square bg-gray-700 rounded"
+                animate={{
+                  opacity: [0.3, 0.6, 0.3]
+                }}
+                transition={{
+                  duration: 1.5,
+                  delay: i * 0.1,
+                  repeat: Infinity
+                }}
+              />
+            ))}
+          </motion.div>
+        </motion.div>
       </div>
     );
   }
@@ -141,6 +344,48 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onTouchStart={(e) => {
+        if (e.touches.length === 1) {
+          e.preventDefault();
+          const touch = e.touches[0];
+          setIsDragging(true);
+          transformRef.current = {
+            ...transformRef.current,
+            lastTouch: { x: touch.clientX, y: touch.clientY }
+          };
+        }
+      }}
+      onTouchMove={(e) => {
+        if (e.touches.length === 1 && isDragging) {
+          e.preventDefault();
+          const touch = e.touches[0];
+          const lastTouch = transformRef.current.lastTouch;
+          if (lastTouch) {
+            const movementX = touch.clientX - lastTouch.x;
+            const movementY = touch.clientY - lastTouch.y;
+            handleMouseMove({
+              movementX,
+              movementY,
+              preventDefault: () => {}
+            } as unknown as React.MouseEvent);
+            transformRef.current.lastTouch = { x: touch.clientX, y: touch.clientY };
+          }
+        }
+      }}
+      onTouchEnd={() => {
+        setIsDragging(false);
+        if (transformRef.current.lastTouch) {
+          transformRef.current = {
+            ...transformRef.current,
+            lastTouch: null
+          };
+        }
+      }}
+      style={{
+        willChange: isDragging ? 'transform' : 'auto',
+        touchAction: 'none',
+        WebkitTapHighlightColor: 'transparent'
+      }}
     >
       {/* 工具栏 */}
       <div
@@ -152,7 +397,7 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
         <Button
           variant="ghost"
           size={isMobile ? "icon" : "sm"}
-          onClick={() => setTransform({ x: 0, y: 0, scale: 1 })}
+          onClick={() => setTransform({ x: 0, y: 0, scale: 1, lastTouch: null })}
           className="hover:bg-accent"
         >
           <RotateCcw className="w-4 h-4" />
@@ -161,7 +406,7 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
           variant="ghost"
           size={isMobile ? "icon" : "sm"}
           onClick={() =>
-            setTransform((prev) => ({ ...prev, scale: prev.scale * 1.2 }))
+            setTransform((prev) => ({ ...prev, scale: prev.scale * 1.2, lastTouch: prev.lastTouch }))
           }
           className="hover:bg-accent"
         >
@@ -171,7 +416,7 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
           variant="ghost"
           size={isMobile ? "icon" : "sm"}
           onClick={() =>
-            setTransform((prev) => ({ ...prev, scale: prev.scale * 0.8 }))
+            setTransform((prev) => ({ ...prev, scale: prev.scale * 0.8, lastTouch: prev.lastTouch }))
           }
           className="hover:bg-accent"
         >
@@ -336,6 +581,17 @@ const BadPixelVisualization = ({ data, visualMode }: BadPixelVisualizationProps)
       )}
     </motion.div>
   );
+});
+
+BadPixelVisualization.displayName = "BadPixelVisualization";
+const arePropsEqual = (prevProps: BadPixelVisualizationProps, nextProps: BadPixelVisualizationProps) => {
+  return (
+    prevProps.visualMode === nextProps.visualMode &&
+    prevProps.data.width === nextProps.data.width &&
+    prevProps.data.height === nextProps.data.height &&
+    prevProps.data.hotPixels.length === nextProps.data.hotPixels.length &&
+    prevProps.data.coldPixels.length === nextProps.data.coldPixels.length
+  );
 };
 
-export default BadPixelVisualization;
+export default memo(BadPixelVisualization, arePropsEqual);

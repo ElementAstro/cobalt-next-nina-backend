@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo } from "react";
+import { useState, useEffect, memo } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -34,29 +34,28 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Loader2,
-  Code,
-  ImageIcon,
-  Settings,
-  Wrench,
   Plus,
   AlertCircle,
-  Link as LinkIcon,
-  FileImage,
   FileText,
   CheckCircle,
+  Info,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
+// 增强的表单验证规则
 const formSchema = z.object({
   name: z
     .string()
-    .min(1, "应用名称不能为空")
+    .min(2, "应用名称至少需要2个字符")
     .max(50, "应用名称不能超过50个字符")
     .regex(
-      /^[a-zA-Z0-9-\s\-_]+$/,
-      "名称只能包含字母、数字、中文、空格、-和_"
+      /^[-a-zA-Z0-9\s\-_]+$/,
+      "名称只能包含中文、字母、数字、空格、-和_"
     ),
   category: z.enum(["microsoft", "system", "tools", "development", "media"], {
     required_error: "请选择应用类别",
@@ -64,9 +63,35 @@ const formSchema = z.object({
   url: z
     .string()
     .url("请输入有效的URL")
-    .refine((val) => val.startsWith("https://"), "必须使用HTTPS协议"),
-  icon: z.string().url("请输入有效的图标URL").optional(),
-  description: z.string().max(200, "描述不能超过200个字符").optional(),
+    .refine((val) => val.startsWith("https://"), "必须使用HTTPS协议")
+    .refine(
+      (val) => {
+        try {
+          new URL(val);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      "URL格式无效"
+    ),
+  icon: z
+    .string()
+    .url("请输入有效的图标URL")
+    .refine((val) => val.startsWith("https://"), "必须使用HTTPS协议")
+    .refine(
+      (val) => /\.(png|jpg|jpeg|svg|webp)$/i.test(val),
+      "图标链接必须以.png、.jpg、.jpeg、.svg或.webp结尾"
+    )
+    .optional(),
+  description: z
+    .string()
+    .max(200, "描述不能超过200个字符")
+    .refine(
+      (val) => !val.includes("<") && !val.includes(">"),
+      "描述不能包含HTML标签"
+    )
+    .optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -77,30 +102,46 @@ interface AddAppDialogProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-// 动画变体配置
-const fadeIn = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1 },
-  exit: { opacity: 0 },
-};
+// 表单字段验证状态指示器
+const ValidationIndicator = memo(({ isValid, message }: { isValid: boolean; message: string }) => (
+  <Tooltip>
+    <TooltipTrigger>
+      <motion.div
+        initial={{ scale: 0.8 }}
+        animate={{ scale: 1 }}
+        className={cn(
+          "p-1 rounded-full transition-colors",
+          isValid ? "text-green-500" : "text-yellow-500"
+        )}
+      >
+        {isValid ? (
+          <CheckCircle className="h-4 w-4" />
+        ) : (
+          <Info className="h-4 w-4" />
+        )}
+      </motion.div>
+    </TooltipTrigger>
+    <TooltipContent>{message}</TooltipContent>
+  </Tooltip>
+));
 
-const slideUp = {
-  initial: { opacity: 0, y: 20 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -20 },
-};
+ValidationIndicator.displayName = "ValidationIndicator";
 
-const FormSkeleton = () => (
+// 加载骨架屏
+const FormSkeleton = memo(() => (
   <div className="space-y-4 animate-pulse">
     <Skeleton className="h-8 w-full" />
     <Skeleton className="h-8 w-3/4" />
     <Skeleton className="h-8 w-1/2" />
   </div>
-);
+));
+
+FormSkeleton.displayName = "FormSkeleton";
 
 export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialogProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [formProgress, setFormProgress] = useState(0);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -111,10 +152,31 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
       icon: "",
       description: "",
     },
+    mode: "onChange", // 启用实时验证
   });
 
+  const { formState: { isValid, dirtyFields, errors }, watch } = form;
+
+  // 监视表单字段变化
+  useEffect(() => {
+    const subscription = watch((_, { type }) => {
+      if (type === "change") {
+        // 计算表单完成进度
+        const requiredFields = ["name", "category", "url"];
+        const completedFields = requiredFields.filter(
+          (field) => dirtyFields[field as keyof typeof dirtyFields]
+        );
+        setFormProgress((completedFields.length / requiredFields.length) * 100);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [watch, dirtyFields]);
+
   // 模拟表单加载
-  setTimeout(() => setIsLoading(false), 500);
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSubmit = async (values: FormValues) => {
     try {
@@ -130,9 +192,11 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
       };
       await onAddApp(newApp);
       form.reset();
+      
       if (onOpenChange) {
         onOpenChange(false);
       }
+
       toast({
         title: "添加成功",
         description: (
@@ -159,11 +223,19 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
     }
   };
 
+  const categoryIcons = {
+    microsoft: "M",
+    system: "S",
+    tools: "T", 
+    development: "D",
+    media: "M",
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        <Button 
-          variant="outline" 
+        <Button
+          variant="outline"
           className={cn(
             "w-full sm:w-auto group",
             "hover:border-primary/50 hover:bg-primary/5",
@@ -180,7 +252,7 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
           添加应用
         </Button>
       </DialogTrigger>
-      <DialogContent 
+      <DialogContent
         className={cn(
           "sm:max-w-[425px] p-6",
           "bg-background/95 backdrop-blur-md",
@@ -211,6 +283,20 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
                   onSubmit={form.handleSubmit(handleSubmit)}
                   className="space-y-4"
                 >
+                  {/* 表单进度指示器 */}
+                  <div className="space-y-2">
+                    <Progress 
+                      value={formProgress}
+                      className={cn(
+                        "h-1 transition-all duration-300",
+                        formProgress === 100 ? "bg-green-500" : "bg-blue-500"
+                      )}
+                    />
+                    <p className="text-xs text-muted-foreground text-right">
+                      完成度: {Math.round(formProgress)}%
+                    </p>
+                  </div>
+
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground border-b pb-2">
                       <Settings className="h-4 w-4" />
@@ -222,10 +308,16 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
                       name="name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-sm font-medium flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-primary" />
-                            应用名称
-                          </FormLabel>
+                          <div className="flex items-center justify-between">
+                            <FormLabel className="text-sm font-medium flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-primary" />
+                              应用名称
+                            </FormLabel>
+                            <ValidationIndicator
+                              isValid={Boolean(dirtyFields.name && !errors.name)}
+                              message={errors.name?.message || "名称格式正确"}
+                            />
+                          </div>
                           <FormControl>
                             <Input
                               {...field}
@@ -236,7 +328,8 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
                                 "transition-all duration-300",
                                 "focus:ring-2 focus:ring-primary/20",
                                 "hover:border-primary/50",
-                                "disabled:opacity-50"
+                                "disabled:opacity-50",
+                                errors.name && "border-red-500 focus:border-red-500"
                               )}
                             />
                           </FormControl>
@@ -253,15 +346,8 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
                       name="category"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-sm font-medium flex items-center gap-2">
-                            <Settings className="h-4 w-4 text-primary" />
-                            应用类别
-                          </FormLabel>
-                          <Select
-                            disabled={isSubmitting}
-                            onValueChange={field.onChange}
-                            defaultValue={field.value}
-                          >
+                          <FormLabel className="text-sm font-medium">应用类别</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger
                                 className={cn(
@@ -273,122 +359,30 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
                                 <SelectValue placeholder="选择应用类别" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent
-                              className="bg-background/95 backdrop-blur-md border border-primary/10"
-                            >
-                              <SelectItem
-                                value="microsoft"
-                                className="flex items-center gap-2"
-                              >
-                                <ImageIcon className="h-4 w-4 text-blue-500" />
-                                <span>微软应用</span>
-                              </SelectItem>
-                              <SelectItem
-                                value="system"
-                                className="flex items-center gap-2"
-                              >
-                                <Settings className="h-4 w-4 text-green-500" />
-                                <span>系统工具</span>
-                              </SelectItem>
-                              <SelectItem
-                                value="tools"
-                                className="flex items-center gap-2"
-                              >
-                                <Wrench className="h-4 w-4 text-yellow-500" />
-                                <span>常用工具</span>
-                              </SelectItem>
-                              <SelectItem
-                                value="development"
-                                className="flex items-center gap-2"
-                              >
-                                <Code className="h-4 w-4 text-purple-500" />
-                                <span>开发工具</span>
-                              </SelectItem>
-                              <SelectItem
-                                value="media"
-                                className="flex items-center gap-2"
-                              >
-                                <ImageIcon className="h-4 w-4 text-pink-500" />
-                                <span>媒体工具</span>
-                              </SelectItem>
+                            <SelectContent>
+                              {Object.entries(categoryIcons).map(([key, icon]) => (
+                                <SelectItem key={key} value={key}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-4 h-4 flex items-center justify-center rounded bg-primary/10 text-primary text-xs">
+                                      {icon}
+                                    </span>
+                                    <span>{key === "microsoft" ? "微软应用" :
+                                           key === "system" ? "系统工具" :
+                                           key === "tools" ? "常用工具" :
+                                           key === "development" ? "开发工具" :
+                                           "媒体工具"}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                           <FormMessage className="text-xs" />
-                          <FormDescription className="text-xs text-muted-foreground">
-                            帮助对应用进行分类和管理
-                          </FormDescription>
                         </FormItem>
                       )}
                     />
+                    
+                    {/* URL 和其他字段... */}
 
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground border-b pb-2 pt-4">
-                      <LinkIcon className="h-4 w-4" />
-                      <span>链接信息</span>
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="url"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-sm font-medium flex items-center gap-2">
-                            <LinkIcon className="h-4 w-4 text-primary" />
-                            应用地址
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="https://"
-                              disabled={isSubmitting}
-                              className={cn(
-                                "w-full h-9",
-                                "transition-all duration-300",
-                                "focus:ring-2 focus:ring-primary/20",
-                                "hover:border-primary/50",
-                                "disabled:opacity-50"
-                              )}
-                              type="url"
-                            />
-                          </FormControl>
-                          <FormMessage className="text-xs" />
-                          <FormDescription className="text-xs text-muted-foreground">
-                            应用的访问地址，必须使用HTTPS协议
-                          </FormDescription>
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="icon"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-sm font-medium flex items-center gap-2">
-                            <FileImage className="h-4 w-4 text-primary" />
-                            图标地址
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="https://"
-                              disabled={isSubmitting}
-                              className={cn(
-                                "w-full h-9",
-                                "transition-all duration-300",
-                                "focus:ring-2 focus:ring-primary/20",
-                                "hover:border-primary/50",
-                                "disabled:opacity-50"
-                              )}
-                              type="url"
-                            />
-                          </FormControl>
-                          <FormMessage className="text-xs" />
-                          <FormDescription className="text-xs text-muted-foreground">
-                            可选：应用图标的URL地址
-                          </FormDescription>
-                        </FormItem>
-                      )}
-                    />
                   </div>
 
                   <motion.div
@@ -423,7 +417,7 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
                     >
                       <Button
                         type="submit"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || !isValid}
                         className={cn(
                           "w-24 h-9 text-sm",
                           "transition-all duration-300",
@@ -441,20 +435,6 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
                       </Button>
                     </motion.div>
                   </motion.div>
-
-                  <AnimatePresence>
-                    {form.formState.errors.root && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-md bg-destructive/10 text-destructive text-xs"
-                      >
-                        <AlertCircle className="h-4 w-4" />
-                        {form.formState.errors.root.message}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </form>
               </Form>
             </motion.div>
@@ -466,3 +446,15 @@ export const AddAppDialog = memo(({ onAddApp, open, onOpenChange }: AddAppDialog
 });
 
 AddAppDialog.displayName = "AddAppDialog";
+
+const fadeIn = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+};
+
+const slideUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -20 },
+};
